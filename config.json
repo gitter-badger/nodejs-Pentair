@@ -1,0 +1,22 @@
+{
+    "Pentair": {
+        "circuit1": "Spa",
+        "circuit2": "Jets",
+        "circuit3": "Air Blower",
+        "circuit4": "Cleaner",
+        "circuit5": "WaterFall 1.5",
+        "circuit6": "Pool",
+        "circuit7": "Spa Lights",
+        "circuit8": "Pool Lights",
+        "circuit9": "Path Lights",
+        "circuit10": "<--SKIP ME-->",
+        "circuit11": "Spillway",
+        "circuit12": "Waterfall 1",
+        "circuit13": "Waterfall 2",
+        "circuit14": "Waterfall 3",
+        "circuit15": "Pool Low",
+        "circuit16": "Feature6",
+        "circuit17": "Feature7",
+        "circuit18": "Feature8"
+    }
+}
