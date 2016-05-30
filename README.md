@@ -36,7 +36,12 @@ Let me elaborate on #3.  Both the awesome work of Jason Y and Michael were speci
 0001540 dfe1 c5fb f3d3 7fff ffff ffff ffff fff9
 ```
 
-
+# Versions
+Initial - This version was the first cut at the code
+0.0.2 - Many, many improvements.  
+    - No duplicate messages!  I realized the way my code was running that I was parsing the same message multiple times.  The code now slices the buffer after each message that is parsed.  
+    - Logging.  The program now uses Winston to have different logs.  The Pentair bus has a LOT of messages.  All the output, debug messages, etc, are being saved to 'pentair_full_dump.log' and successful messages are being logged to 'pentair_info.log'.  I will update these names, but if you want less logging, set the transports to ```level: 'error'``` from 'level: 'silly'.  It's just silly how much it logs at this level!
+    - Decoding.  The code is getting pretty good at understanding the basic message types.  There are some that I know and still have to decode; some that I know mostly what they do, and some that are still mysteries!  Please help here. 
 
 # Configuration
 1.  Edit the config.json to match your PHYSICAL circuits.  The code will dynamically map the circuits to their virtual counterparts automatically.  You can not get this from the iPhone, iPad (or Android?) apps.  You will need to go to the controller to get the physical mapping or look in the setup section of your ScreenLogic app.  They aren't numbered, either, so just add them in the order you see them.
@@ -103,6 +108,16 @@ An example of pump communication:
  Full Payload:  [16,96,7,15,10,0,0,0,170,4,226,0,0,0,0,0,1,22,14,2,234] 
 <-- PUMP  Pump1 
 ```
+
+An example of a few lines of known code:
+```
+Msg# 16   Main asking Pump1 for remote control (turn off pump control panel): [96,16,4,1,255,2,25]
+Msg# 17   Pump1 confirming it is in remote control: [16,96,4,1,255,2,25]
+Msg# 18   Main asking Pump1 to set run to _10_: [96,16,6,1,10,1,38]
+Msg# 19   Main confirming it is in run _10_: [16,96,6,1,10,1,38]
+Msg# 20   Main asking Pump1 to write a _2, 196, 8, _ command: [96,16,1,4,2,196,8,2,1,234]
+```
+
 
 An example of an unknown payload:
 ```
