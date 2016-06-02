@@ -17,6 +17,10 @@ var instruction = ''; //var to hold potential chatter instructions
 var processingBuffer = 0; //flag to tell us if we are processing the buffer currently
 var counter = 0; //log counter to help match messages with buffer in log
 
+var pumpMessages = 0; //variable if we want to output pump messages or not
+var duplicateMessages = 0; //variable if we want to output duplicate broadcast messages
+var showConsoleNotDecoded = 0; //variable to hide any unknown messages
+
 const state = {
     OFF: 0,
     ON: 1,
@@ -57,10 +61,10 @@ const pumpPacketFields = {
     CMD: 4, //
     MODE: 5, //?? Mode in pump status. Means something else in pump write/response
     DRIVESTATE: 6, //?? Drivestate in pump status.  Means something else in pump write/response
-    WATTS: 7,
-    RUN: 8,
-    RPM: 9,
-    GPM: 10, //Doesn't look to actually be GPM.  Maybe GPH?  Or something else completely
+    WATTSH: 7,
+    WATTSL: 8,
+    RPMH: 9,
+    RPML: 10,
     PPC: 11, //??
     //12 Unknown
     ERR: 13,
@@ -78,6 +82,14 @@ const pumpAction = {
     6: 'RUN', //Set run mode
     7: 'STATUS' //Request status
 
+}
+
+const heatMode = {
+    //Pentair controller sends the pool and spa heat status as a 4 digit binary byte from 0000 (0) to 1111 (15).  The left two (xx__) is for the spa and the right two (__xx) are for the pool.  EG 1001 (9) would mean 10xx = 2 (Spa mode Solar Pref) and xx01 = 1 (Pool mode Heater)
+    0: 'Off',
+    1: 'Heater',
+    2: 'Solar Pref',
+    3: 'Solar Only'
 }
 
 const ctrl = {
@@ -150,6 +162,19 @@ for (var key in poolConfig.Pentair) {
         circuitArr[myEQ].push(poolConfig.Pentair[key]);
         j++;
     }
+}
+
+//return a given equipment name given the circuit # 0-16++
+function circuitArrStr(equip) {
+    equip = equip - 1; //because equip starts at 1 but array starts at 0
+    if (equip < 8) {
+        return circuitArr[0][equip]
+    } else if (equip >= 8 && equip < 16) {
+        return circuitArr[1][equip - 8]
+    } else {
+        return circuitArr[2][equip - 16]
+    }
+    return 'Error';
 }
 
 //Used to count all items in array 
@@ -227,7 +252,7 @@ sp.on('open', function () {
 
 
                                 //if we don't have the length bit in the buffer or the length of the message is less than the remaining buffer bytes
-                                fulllogger.log('silly', 'Msg#:  %s   BUFFER IN MSG CHECK:  data2.len %s, chatterlen %s, i %s: TOTAL: %s True? %s ', counter, data2.length, chatterlen, i, data2.length - i - 1 - chatterlen, (data2.length - i - 2 - chatterlen) <= 0)
+                                fulllogger.log('silly', 'Msg#  %s   BUFFER IN MSG CHECK:  data2.len %s, chatterlen %s, i %s: TOTAL: %s True? %s ', counter, data2.length, chatterlen, i, data2.length - i - 1 - chatterlen, (data2.length - i - 2 - chatterlen) <= 0)
 
 
 
@@ -235,7 +260,7 @@ sp.on('open', function () {
 
                                 if (chatterlen == undefined || (data2.length - i - 2 - chatterlen) <= 0) {
                                     //reset the buffer starting with the current partial message
-                                    fulllogger.debug('Msg#:  %s   Incomplete message at end of buffer.  Prepending message to empty buffer string.');
+                                    fulllogger.debug('Msg#  %s   Incomplete message at end of buffer.  Prepending message to empty buffer string.');
                                     brokeBufferLoop = true;
 
                                     data2 = data2.slice(i - 2)
@@ -243,12 +268,12 @@ sp.on('open', function () {
                                 }
 
                                 counter += 1;
-                                fulllogger.info('Msg#: %s   Full buffer where message found: %s', counter, b.data.toString())
+                                fulllogger.info('Msg# %s   Full buffer where message found: %s', counter, b.data.toString())
 
                                 i += 3; //jump ahead to start of payload
 
 
-                                fulllogger.silly('Msg#:  %s   Length should be: %s  at position: %s ', counter, chatterlen, i)
+                                fulllogger.silly('Msg#  %s   Length should be: %s  at position: %s ', counter, chatterlen, i)
 
 
                                 //iterate through the JSON array to pull out a valid message
@@ -265,11 +290,11 @@ sp.on('open', function () {
                                         chatter[j] = b.data[i + j];
 
                                         if (j == chatterlen - 1) {
-                                            fulllogger.silly('Msg#:  %s   Extracting chatter from buffer: (length of chatter %s, position in buffer %s, start position of chatter in buffer %s) %s', counter, chatterlen, i, j, output)
+                                            fulllogger.silly('Msg# %s   Extracting chatter from buffer: (length of chatter %s, position in buffer %s, start position of chatter in buffer %s) %s', counter, chatterlen, i, j, output)
 
                                             //This may be unnecessary; fixed code so we should get correct messages but will leave it for now
                                             if (chatter[j] == undefined || chatter[j - 1] == undefined || chatter[j - 1] == undefined) {
-                                                fulllogger.warn('Msg#: %s   Chatter length MISMATCH.  len %s, i %s currBufferLen %s', counter, chatterlen, i, currBufferLen)
+                                                fulllogger.warn('Msg# %s   Chatter length MISMATCH.  len %s, i %s currBufferLen %s', counter, chatterlen, i, currBufferLen)
                                             }
 
 
@@ -288,7 +313,9 @@ sp.on('open', function () {
                             //this isn't working <-- CHECK
                             else if (b.data[i + 8] == 6) {
                                 var str;
+                                
                                 console.log('------->FOUND SOMETHING???')
+                                console.log('data: ', JSON.stringify(b.data))
                                 i += 3;
                                 chatterlen = 8;
                                 for (j = 0; j < chatterlen; j++) {
@@ -334,12 +361,12 @@ sp.on('open', function () {
             if (brokeBufferLoop) {
                 //we are here if we broke out of the buffer.  This means there is the start of a message in the last 9+/- bytes
                 //We do this above!  Don't need it here.  data2 = data2.slice(currBufferLen - 9);
-                fulllogger.debug('Msg#: %s   Incomplete message at end of buffer.  Sliced buffer so message is at beginning of buffer (sliced by %s) ', currBufferLen - 9);
+                fulllogger.debug('Incomplete message at end of buffer.  Sliced buffer so message is at beginning of buffer (sliced by %s) ', currBufferLen - 9);
 
             } else {
                 //We should get here after every message.  Slice the buffer to a new message
                 data2 = data2.slice(i);
-                fulllogger.debug('Msg#: %s   At end of message.  Sliced off %s from remaining buffer.', currBufferLen);
+                fulllogger.debug('At end of message.  Sliced off %s from remaining buffer.', currBufferLen);
             }
 
             processingBuffer = 0;
@@ -352,7 +379,7 @@ sp.on('open', function () {
 //Validate the checksum on the chatter
 function checksum(chatterdata, callback, counter) {
     //make a copy so when we callback the decode method it isn't changing our log output in Winston
-    fulllogger.silly("Msg#: %s   Checking checksum on chatter: ", chatterdata);
+    fulllogger.silly("Msg# %s   Checking checksum on chatter: ", chatterdata);
     var chatterCopy = chatterdata.slice(0);
     len = chatterCopy.length;
 
@@ -367,10 +394,10 @@ function checksum(chatterdata, callback, counter) {
 
     validChatter = (chatterdatachecksum == databytes);
     if (!validChatter) {
-        fulllogger.warn('Msg#: %s   Mismatch on checksum:   %s!=%s   %s', counter, chatterdatachecksum, databytes, chatterCopy)
-        console.log('Msg#: %s   Mismatch on checksum:    %s!=%s   %s', counter, chatterdatachecksum, databytes, chatterCopy)
+        fulllogger.warn('Msg# %s   Mismatch on checksum:   %s!=%s   %s', counter, chatterdatachecksum, databytes, chatterCopy)
+        console.log('Msg# %s   Mismatch on checksum:    %s!=%s   %s', counter, chatterdatachecksum, databytes, chatterCopy)
     } else {
-        logger.info('Msg#: %s   Match on Checksum:    %s==%s   %s', counter, chatterdatachecksum, databytes, chatterCopy)
+        logger.info('Msg# %s   Match on Checksum:    %s==%s   %s', counter, chatterdatachecksum, databytes, chatterCopy)
     }
 
     //Go back to working on the original, not the copy
@@ -378,7 +405,7 @@ function checksum(chatterdata, callback, counter) {
 
     chatterCopy = chatterCopy.splice(2);
     //console.log("NewCD: ", newcd);
-    fulllogger.silly("Msg#: %s   Chatterdata splice: %s --> %s ", counter, chatterdata, chatterCopy)
+    fulllogger.silly("Msg# %s   Chatterdata splice: %s --> %s ", counter, chatterdata, chatterCopy)
         //call new function to process message; if it isn't valid, we noted above so just don't continue
     if (validChatter) callback(chatterCopy, counter);
 };
@@ -438,7 +465,7 @@ function decode(data, counter) {
     var decoded = false;
 
     //uncomment the below line if you think the 'parser' is missing any messages.  It will output every message sent here.
-    //console.log('Msg#: %s is %s', counter, JSON.stringify(data));  
+    //console.log('Msg# %s is %s', counter, JSON.stringify(data));  
 
     //this payload is good if heat command on pool is one of Heater/Solar Pref/Solar Only
     if (data.length == 35 && data[packetFields.FROM] == ctrl.MAIN && data[packetFields.DEST] == ctrl.BROADCAST) {
@@ -467,8 +494,8 @@ function decode(data, counter) {
         if (currentStatus == null || currentStatus == undefined) {
             currentStatus = clone(status);
             currentStatusBytes = data.slice(0);
-            console.log('-->EQUIPMENT Msg#: %s \n Equipment Status: %O', counter, status)
-            logger.info('Msg#: %s    Discovered initial pool settings: %s', counter, JSON.stringify(currentStatus))
+            console.log('-->EQUIPMENT Msg# %s   \n Equipment Status: %O', counter, status)
+            logger.info('Msg# %s   Discovered initial pool settings: %s', counter, JSON.stringify(currentStatus))
             console.log(printStatus(data));
             console.log('\n <-- EQUIPMENT \n');
             decoded = true;
@@ -483,9 +510,9 @@ function decode(data, counter) {
                 //we are only checking our KNOWN objects.  There may be other differences and we'll recode for that shortly.
 
 
-                console.log('-->EQUIPMENT Msg# %s (that we can identify)\n Equipment Status: %O', counter, currentStatus)
+                console.log('-->EQUIPMENT Msg# %s   \n Equipment Status: ', counter, currentStatus)
 
-                console.log('Msg#: %s What\'s Different (first occurrence only?: %s', counter, currentStatus.whatsDifferent(status))
+                console.log('Msg# %s   What\'s Different?: %s', counter, currentStatus.whatsDifferent(status))
                 console.log(printStatus(currentStatusBytes, data));
                 console.log('\n <-- EQUIPMENT \n');
 
@@ -497,14 +524,13 @@ function decode(data, counter) {
             } else {
                 //let's see if it is the exact same packet or if there are variations in the data we have not interpreted yet
                 if (!data.equals(currentStatusBytes)) {
-                    console.log('-->Variation in unknown status bytes Msg#: ', counter)
+                    console.log('-->Variation in unknown status bytes Msg# ', counter)
                     console.log(printStatus(currentStatusBytes, data));
                     console.log('<--Variation \n')
                     currentStatusBytes = data.slice(0);
                     decoded = true;
-                }
-                else{
-                    console.log('Msg#: %s   Duplicate broadcast.', counter) 
+                } else {
+                    if (duplicateMessages) console.log('Msg# %s   Duplicate broadcast.', counter)
                     decoded = true;
                 }
 
@@ -516,7 +542,7 @@ function decode(data, counter) {
         // if the time field is whacked, don't send any data.  <-- leftover code.  can probable eliminate
         d = status.time.split(":")
         if (parseInt(d[0]) < 24 && parseInt(d[1]) < 60) {
-            if (loglevel) console.log('-->EQUIPMENT Msg#: ', counter, '\n Equipment Status verbose: ', JSON.stringify(status), '\n', parseChatter(data), '\n <-- EQUIPMENT \n');
+            if (loglevel) console.log('-->EQUIPMENT Msg# ', counter, '\n Equipment Status verbose: ', JSON.stringify(status), '\n', parseChatter(data), '\n <-- EQUIPMENT \n');
         }
     } else if (((data[packetFields.FROM] == ctrl.PUMP1 || data[packetFields.FROM] == ctrl.PUMP2) && data[packetFields.DEST] == ctrl.MAIN) || ((data[packetFields.DEST] == ctrl.PUMP1 || data[packetFields.DEST] == ctrl.PUMP2) && data[packetFields.FROM] == ctrl.MAIN))
 
@@ -526,7 +552,7 @@ function decode(data, counter) {
 
         if (instruction == null || instruction == undefined || instruction == '') {
             instruction = data;
-            console.log('Msg#: %s  Setting initial chatter as instruction: %s', counter, instruction)
+            console.log('Msg# %s   Setting initial chatter as instruction: %s', counter, instruction)
         }
 
         var isResponse = data.isResponse(instruction);
@@ -536,7 +562,8 @@ function decode(data, counter) {
         if (data[pumpPacketFields.ACTION] == 7) {
             if (data[pumpPacketFields.CMD] == 1) //Request pump status
             {
-                console.log('Msg# %s   Main asking %s for status: %s', counter, ctrlString[data[pumpPacketFields.DEST]], JSON.stringify(data));
+                if (pumpMessages) console.log('Msg# %s   Main asking %s for status: %s', counter, ctrlString[data[pumpPacketFields.DEST]], JSON.stringify(data));
+                decoded = true;
             } else //Response to request for status 
             {
 
@@ -547,7 +574,6 @@ function decode(data, counter) {
                     drivestate: null,
                     watts: null,
                     rpm: null,
-                    gpm: null,
                     ppc: null,
                     err: null,
                     timer: null,
@@ -562,13 +588,12 @@ function decode(data, counter) {
                 status.pump = ctrlString[pumpnum];
                 status.mode = data[pumpPacketFields.MODE]
                 status.drivestate = data[pumpPacketFields.DRIVESTATE]
-                status.watts = (data[pumpPacketFields.WATTS] * 256) + data[pumpPacketFields.WATTS + 1]
-                status.rpm = (data[pumpPacketFields.RPM] * 256) + data[pumpPacketFields.RPM + 1]
-                status.gpm = data[pumpPacketFields.GPM]
+                status.watts = (data[pumpPacketFields.WATTSH] * 256) + data[pumpPacketFields.WATTSL]
+                status.rpm = (data[pumpPacketFields.RPMH] * 256) + data[pumpPacketFields.RPML]
                 status.ppc = data[pumpPacketFields.PPC]
                 status.err = data[pumpPacketFields.ERR]
                 status.timer = data[pumpPacketFields.TIMER]
-                console.log('--> PUMP Msg#: ', counter, '\n', ctrlString[pumpnum], '\n Pump Status: ', JSON.stringify(status), '\n', 'Full Payload: ', JSON.stringify(data), '\n<-- PUMP ', ctrlString[pumpnum], '\n');
+                if (pumpMessages) console.log('--> PUMP Msg# ', counter, '\n', ctrlString[pumpnum], '\n Pump Status: ', JSON.stringify(status), '\n', 'Full Payload: ', JSON.stringify(data), '\n<-- PUMP ', ctrlString[pumpnum], '\n');
                 decoded = true;
             }
         } else
@@ -578,20 +603,20 @@ function decode(data, counter) {
             if (data[pumpPacketFields.CMD] == 255) //Set pump control panel off (Main panel control only)
             {
                 if (!isResponse) {
-                    console.log('Msg# %s   Main asking %s for remote control (turn off pump control panel): %s', counter, ctrlString[data[pumpPacketFields.DEST]], JSON.stringify(data));
+                    if (pumpMessages) console.log('Msg# %s   %s asking %s for remote control (turn off pump control panel): %s', counter, ctrlString[data[pumpPacketFields.FROM]], ctrlString[data[pumpPacketFields.DEST]], JSON.stringify(data));
                     decoded = true;
                 } else {
-                    console.log('Msg#: %s   %s confirming it is in remote control: %s', counter, ctrlString[data[pumpPacketFields.FROM]], JSON.stringify(data))
+                    if (pumpMessages) console.log('Msg# %s   %s confirming it is in remote control: %s', counter, ctrlString[data[pumpPacketFields.FROM]], JSON.stringify(data))
                     decoded = true;
                 }
             }
             if (data[pumpPacketFields.CMD] == 0) //Set pump control panel on 
             {
                 if (!isResponse) {
-                    console.log('Msg# %s   Main asking %s for local control (turn on pump control panel): %s', counter, ctrlString[data[pumpPacketFields.DEST]], JSON.stringify(data))
+                    if (pumpMessages) console.log('Msg# %s   %s asking %s for local control (turn on pump control panel): %s', counter, ctrlString[data[pumpPacketFields.FROM]], ctrlString[data[pumpPacketFields.DEST]], JSON.stringify(data))
                     decoded = true;
                 } else {
-                    console.log('Msg#: %s   %s confirming it is in local control: %s', counter, ctrlString[data[pumpPacketFields.FROM]], JSON.stringify(data))
+                    if (pumpMessages) console.log('Msg# %s   %s confirming it is in local control: %s', counter, ctrlString[data[pumpPacketFields.FROM]], JSON.stringify(data))
                     decoded = true;
                 }
             }
@@ -605,12 +630,12 @@ function decode(data, counter) {
                     pumpCommand += ', '
                 }
 
-                console.log('Msg# %s   Main asking %s to write a _%s_ command: %s', counter, ctrlString[data[pumpPacketFields.DEST]], pumpCommand, JSON.stringify(data));
+                if (pumpMessages) console.log('Msg# %s   %s asking %s to write a _%s_ command: %s', counter, ctrlString[data[pumpPacketFields.FROM]], ctrlString[data[pumpPacketFields.DEST]], pumpCommand, JSON.stringify(data));
                 decoded = true;
             } else {
                 var pumpResponse = ''
                 pumpResponse += data[pumpPacketFields.LENGTH + 1] + ', ' + data[pumpPacketFields.LENGTH + 2]
-                console.log('Msg# %s   %s sent response _%s_ to write command: %s', counter, ctrlString[data[pumpPacketFields.DEST]], pumpResponse, JSON.stringify(data));
+                if (pumpMessages) console.log('Msg# %s   %s sent response _%s_ to write command: %s', counter, ctrlString[data[pumpPacketFields.FROM]], pumpResponse, JSON.stringify(data));
                 decoded = true;
             }
 
@@ -618,22 +643,25 @@ function decode(data, counter) {
         } else if (data[pumpPacketFields.ACTION] == 5) //Set pump mode
         {
             if (!isResponse) {
-                console.log('Msg# %s   Main asking %s to set pump mode to _%s_: %s', counter, ctrlString[data[pumpPacketFields.DEST]], data[pumpPacketFields.CMD], JSON.stringify(data));
+                if (pumpMessages) console.log('Msg# %s   %s asking %s to set pump mode to _%s_: %s', counter, ctrlString[data[pumpPacketFields.FROM]], ctrlString[data[pumpPacketFields.DEST]], data[pumpPacketFields.CMD], JSON.stringify(data));
                 decoded = true;
             } else {
-                console.log('Msg# %s   %s confirmng it is in mode _%s_: %s', counter, ctrlString[data[pumpPacketFields.DEST]], data[pumpPacketFields.CMD], JSON.stringify(data));
+                if (pumpMessages) console.log('Msg# %s   %s confirming it is in mode _%s_: %s', counter, ctrlString[data[pumpPacketFields.FROM]], data[pumpPacketFields.CMD], JSON.stringify(data));
                 decoded = true;
             }
 
         } else if (data[pumpPacketFields.ACTION] == 6) //Set run mode
         {
             if (!isResponse) {
-                console.log('Msg# %s   Main asking %s to set run to _%s_: %s', counter, ctrlString[data[pumpPacketFields.DEST]], data[pumpPacketFields.CMD], JSON.stringify(data));
+                if (pumpMessages) console.log('Msg# %s   %s asking %s to set run to _%s_: %s', counter, ctrlString[data[pumpPacketFields.FROM]], ctrlString[data[pumpPacketFields.DEST]], data[pumpPacketFields.CMD], JSON.stringify(data));
                 decoded = true;
             } else {
-                console.log('Msg# %s   %s confirming it is in run _%s_: %s', counter, ctrlString[data[pumpPacketFields.DEST]], data[pumpPacketFields.CMD], JSON.stringify(data));
+                if (pumpMessages) console.log('Msg# %s   %s confirming it is in run _%s_: %s', counter, ctrlString[data[pumpPacketFields.FROM]], data[pumpPacketFields.CMD], JSON.stringify(data));
                 decoded = true;
             }
+        } else {
+            if (pumpMessages) console.log('Msg# %s is %s', counter, JSON.stringify(data));
+            decoded = true;
         }
         instruction = data.slice();
     } else if (((data[packetFields.FROM] == ctrl.REMOTE || data[packetFields.FROM] == ctrl.WIRELESS) && data[packetFields.DEST] == ctrl.MAIN) || ((data[packetFields.DEST] == ctrl.REMOTE || data[packetFields.DEST] == ctrl.WIRELESS) && data[packetFields.FROM] == ctrl.MAIN)) {
@@ -643,48 +671,50 @@ function decode(data, counter) {
                 source: null,
                 destination: null,
                 b3: null,
-                b4: null,
-                b5: null
+                CMD: null,
+                sFeature: null,
+                ACTION: null,
+                b7: null
 
             }
             status.source = data[packetFields.FROM]
             status.destination = data[packetFields.DEST]
-            status.b3 = data[packetFields[2]]
-            status.b4 = data[packetFields[3]]
-            status.b5 = data[packetFields[4]]
-            console.log('Msg# %s   %s asking %s to change _%s_: %s', counter, ctrlString[data[packetFields.FROM]], data[packetFields.DEST], 'something', JSON.stringify(data));
-            decoded = true;
-        } else {
-                //something??
-        }
-    }
-    /* else {
-        //message not decodede  <-- this is probably reduntant from below
-        
-        if (typeof status == 'undefined') {
-
-            if (instruction == null || instruction == undefined) {
-                instruction = data;
-            } else
-
-
-            //is status a response to the instruction?
-            if (data.isResponse(instruction)) {
-                if (data.length == 8)
-                    console.log('Msg#: %s   Chatter %s is acknowledgement to instruction %s: ', counter, JSON.stringify(data), JSON.stringify(instruction))
-            } else {
-                console.log('Msg#: %s   Unknown chatter: ', counter, JSON.stringify(data))
-                instruction = data.slice();
+            status.b3 = data[2] //134... always?
+            status.CMD = data[3] == 4 ? 'pool temp' : 'feature'; // either 4=pool temp or 2=feature
+            if (data[3] == 2) {
+                status.sFeature = circuitArrStr(data[4])
+                if (data[5] == 0) {
+                    status.ACTION = "off"
+                } else if (data[5] == 1) {
+                    status.ACTION = "on"
+                }
+                console.log('Msg# %s   %s asking %s to change _%s %s to %s_ : %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], status.CMD, status.sFeature, status.ACTION, JSON.stringify(data));
+                decoded = true;
+            } else if (data[3] == 4) {
+                status.POOLSETPOINT = data[4];
+                status.SPASETPOINT = data[5];
+                status.POOLHEATMODE = heatMode[data[6]&3]; //mask the data[6] with 0011
+                status.SPAHEATMODE = heatMode[(data[6]&12)>>2]; //mask the data[6] with 1100 and shift right two places
+                console.log('Msg# %s   %s asking %s to change pool heat mode to %s (@ %s degrees) % spa heat mode to %s (at %s degrees): %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], status.POOLHEATMODE, status.POOLSETPOINT, status.SPAHEATMODE, status.SPASETPOINT, JSON.stringify(data));
+                decoded = true;
+            } else if (data[3] == 16) {
+                //165, 10, 15, 16, 10, 12, 0, 87, 116, 114, 70, 97, 108, 108, 32, 49, 0, 251, 4, 236
+                console.log('12! else: %s', JSON.stringify(data))
+                var myString = '';
+                for (i = 0; i < data.length; i++) {
+                    myString += String.fromCharCode(data[i])
+                }
+                console.log('Msg# %s   %s sending %s _%s_ : %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], myString, JSON.stringify(data));
             }
         }
-    } */
+    }
+    //in case we get here and the first message has not already been set as the instruction command
     if (instruction == null || instruction == undefined) {
         instruction = data;
-    } else
+    }
     if (!decoded) {
-        fulllogger.debug('Msg#: %s   Starting to decode message.', counter)
-        console.log('Msg#: %s is %s', counter, JSON.stringify(data));
-        decoded = false;
+        fulllogger.debug('Msg# %s   Starting to decode message.', counter)
+        if (showConsoleNotDecoded) console.log('Msg# %s is %s', counter, JSON.stringify(data));
     } else(decoded = false)
     return true; //fix this; turn into callback(?)  What do we want to do with it?
 }
@@ -749,7 +779,7 @@ function parseChatter(parsedata) {
 
 
 
-
+//Credit to this function belongs somewhere on Stackoverflow.  Need to find it to give credit.
 Object.prototype.equals = function (object2) {
     //For the first loop, we only check for types
     for (propName in this) {
@@ -801,6 +831,8 @@ Object.prototype.equals = function (object2) {
     return true;
 }
 
+
+//This function adapted from the prototype.equals method above
 Object.prototype.whatsDifferent = function (object2) {
     //For the first loop, we only check for types
     var diffString = '';
@@ -809,12 +841,14 @@ Object.prototype.whatsDifferent = function (object2) {
         //https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/hasOwnProperty
         //Return false if the return value is different
         if (this.hasOwnProperty(propName) != object2.hasOwnProperty(propName)) {
-            return this.hasOwnProperty(propName);
+            diffString += ' ' + this.hasOwnProperty(propName);
+            //return this.hasOwnProperty(propName);
         }
         //Check instance type
         else if (typeof this[propName] != typeof object2[propName]) {
             //Different types => not equal
-            return 'Object type';
+            diffString += ' Object type '
+                //return 'Object type';
         }
     }
     //Now a deeper check using other objects property names
@@ -822,9 +856,11 @@ Object.prototype.whatsDifferent = function (object2) {
         //We must check instances anyway, there may be a property that only exists in object2
         //I wonder, if remembering the checked values from the first loop would be faster or not 
         if (this.hasOwnProperty(propName) != object2.hasOwnProperty(propName)) {
-            return this.hasOwnProperty(propName);
+            diffString += ' ' + this.hasOwnProperty(propName);
+            //return this.hasOwnProperty(propName);
         } else if (typeof this[propName] != typeof object2[propName]) {
-            return 'Object type';
+            diffString += ' Object type '
+                //return 'Object type';
         }
         //If the property is inherited, do not check any more (it must be equa if both objects inherit it)
         if (!this.hasOwnProperty(propName))
@@ -837,23 +873,30 @@ Object.prototype.whatsDifferent = function (object2) {
         if (this[propName] instanceof Array && object2[propName] instanceof Array) {
             // recurse into the nested arrays
             if (!this[propName].equals(object2[propName]))
-                return (propName + ': ' + this[propName]);
+                diffString += ' '
+            propName + ': ' + this[propName] + ' --> ' + object2[propName];
+            //return (propName + ': ' + this[propName]);
         } else if (this[propName] instanceof Object && object2[propName] instanceof Object) {
             // recurse into another objects
             //console.log("Recursing to compare ", this[propName],"with",object2[propName], " both named \""+propName+"\"");
             if (!this[propName].equals(object2[propName]))
-                return (propName + ': ' + this[propName]);
+                diffString += ' ' + propName + ': ' + this[propName] + ' --> ' + object2[propName]
+                //return (propName + ': ' + this[propName]);
         }
         //Normal value comparison for strings and numbers
         else if (this[propName] != object2[propName]) {
-            return (propName + ': ' + this[propName]);
+            diffString += ' ' + propName + ': ' + this[propName] + ' --> ' + object2[propName]
+                //return (propName + ': ' + this[propName]);
         }
     }
-    //If everything passed, let's say YES
-    return 'Nothing!'; // Shouldn't get here!
+    if (diffString == '') {
+        return 'Nothing!';
+    } else {
+        return diffString;
+    }
 }
 
-
+//Credit for this function belongs to: http://stackoverflow.com/questions/728360/most-elegant-way-to-clone-a-javascript-object
 function clone(obj) {
     if (null == obj || "object" != typeof obj) return obj;
     var copy = obj.constructor();

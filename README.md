@@ -42,6 +42,7 @@ Initial - This version was the first cut at the code
     - No duplicate messages!  I realized the way my code was running that I was parsing the same message multiple times.  The code now slices the buffer after each message that is parsed.  
     - Logging.  The program now uses Winston to have different logs.  The Pentair bus has a LOT of messages.  All the output, debug messages, etc, are being saved to 'pentair_full_dump.log' and successful messages are being logged to 'pentair_info.log'.  I will update these names, but if you want less logging, set the transports to ```level: 'error'``` from 'level: 'silly'.  It's just silly how much it logs at this level!
     - Decoding.  The code is getting pretty good at understanding the basic message types.  There are some that I know and still have to decode; some that I know mostly what they do, and some that are still mysteries!  Please help here. 
+0.0.3 - More bug fixes.  Now detects heat mode changes for both pool & spa.  Logging is set to very low (console), but still nearly everything will get written to the logs (see 0.0.2 notes). I've noticed that if any material change is made to the configuration (temp, heat mode, circuit names, etc) Pentair will spit out about 40 lines of configuration.  Reading this is a little challenging but I have figured out a few things.
 
 # Configuration
 1.  Edit the config.json to match your PHYSICAL circuits.  The code will dynamically map the circuits to their virtual counterparts automatically.  You can not get this from the iPhone, iPad (or Android?) apps.  You will need to go to the controller to get the physical mapping or look in the setup section of your ScreenLogic app.  They aren't numbered, either, so just add them in the order you see them.
@@ -75,6 +76,12 @@ Initial - This version was the first cut at the code
 
 The RS-485 bus is VERY active!  It sends a lot of broadcasts, and instructions/acknowledgements.  I tried to filter out all repeating messages, and add some text descriptions to the known (but not decoded) messages like heater commands, valves, etc.  We already have some of the pump commands.
 
+Request for a status change:
+```
+Msg# 16   Wireless asking Main to change pool heat mode to Heater (@ 87 degrees) % spa heat mode to Solar Only (at 100 degrees): [16,34,136,4,87,100,13,0,2,53]
+Msg# 326   Remote asking Main to change _feature Path Lights to on_ : [16,32,134,2,9,1,1,113]
+```
+
 When any circuit is changed, I display a full breakdown of all the circuits and their current status.  This helps them stand out in the logs.  For my pool, a change of a circuit will appear as:
 ```
 -->EQUIPMENT 
@@ -101,7 +108,7 @@ When any circuit is changed, I display a full breakdown of all the circuits and 
 
 What's Different (first occurrence only?:  Spa Lights: on
 ```
-An example of pump communication:
+An example of pump communication:  ***As of 0.0.3, these are suppressed.  I would like to have a persistent variable for these like the pool status so they will only display when they change.  TBD.
 ```
 --> PUMP  Pump1 
  Pump Status:  {"pump":"Pump1","power":1,"watts":170,"rpm":1250} 
@@ -119,7 +126,7 @@ Msg# 20   Main asking Pump1 to write a _2, 196, 8, _ command: [96,16,1,4,2,196,8
 ```
 
 
-An example of an unknown payload:
+An example of an unknown payload:  ***Turned off by default.
 ```
 Unknown chatter:  [97,16,4,1,255,2,26]
 ```
@@ -138,7 +145,7 @@ Chatter [16,97,4,1,255,2,26] is acknowledgement to instruction [97,16,4,1,255,2,
 # Protocol
 If you read through the below links, you'll quickly learn that the packets can vary their meaning based upon who they are sending the message to, and what they want to say.  It appears the same message can come in 35, 38 or 32 bytes, but of course there will be some differences there.
 
-I already figured out the mysterious 0x02 bit between Source and Length refers to the heat command of the pool circuit.  If this 2 is present, the heat mode is either heater/solar pref/solar only.  If the heat mode is off, this bit is excluded and the packet looks completely different (on the to-do list.)
+WRONG --> I already figured out the mysterious 0x02 bit between Source and Length refers to the heat command of the pool circuit.  If this 2 is present, the heat mode is either heater/solar pref/solar only.  If the heat mode is off, this bit is excluded and the packet looks completely different (on the to-do list.)
 
 
 # Credit
