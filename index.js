@@ -50,7 +50,8 @@ const packetFields = {
     EQUIP3: 8,
     WATER_TEMP: 18,
     TEMP_2: 19,
-    AIR_TEMP: 22
+    AIR_TEMP: 22,
+    SOLAR_TEMP: 23
 }
 
 const pumpPacketFields = {
@@ -426,12 +427,12 @@ function printStatus(data1, data2) {
 
 
     header = '';
-    header += (spacepadding + '      S       L                                                           W               A \n');
-    header += (spacepadding + '      O       E           M   M   M                                       T               I \n');
-    header += (spacepadding + '  D   U       N   H       O   O   O                                       R   T           R                                           C   C\n');
-    header += (spacepadding + '  E   R       G   O   M   D   D   D                                       T   M           T                                           H   H\n');
-    header += (spacepadding + '  S   C       T   U   I   E   E   E                                       M   P           M                                           K   K\n');
-    header += (spacepadding + '  T   E       H   R   N   1   2   3                                       P   2           P                                           H   L\n');
+    header += (spacepadding + '      S       L                                                           W               A   S\n');
+    header += (spacepadding + '      O       E           M   M   M                                       T               I   O\n');
+    header += (spacepadding + '  D   U       N   H       O   O   O                                       R   T           R   L                                       C   C\n');
+    header += (spacepadding + '  E   R       G   O   M   D   D   D                                       T   M           T   T                                       H   H\n');
+    header += (spacepadding + '  S   C       T   U   I   E   E   E                                       M   P           M   M                                       K   K\n');
+    header += (spacepadding + '  T   E       H   R   N   1   2   3                                       P   2           P   P                                       H   L\n');
     //                    e.g.  15, 16,  2, 29, 11, 33, 32,  0,  0,  0,  0,  0,  0,  0, 51,  0, 64,  4, 79, 79, 32,  0, 69,102,  0,  0,  7,  0,  0,182,215,  0, 13,  4,186
 
     //format status1 so numbers are three digits
@@ -479,6 +480,7 @@ function decode(data, counter) {
         status.waterTemp = data[packetFields.WATER_TEMP];
         status.temp2 = data[packetFields.TEMP_2];
         status.airTemp = data[packetFields.AIR_TEMP];
+        status.solarTemp = data[packetFields.SOLAR_TEMP];
 
         //Loop through the three bits that start at 3rd (and 4th/5th) bit in the data payload
         for (i = 0; i < circuitArr.length; i++) {
@@ -765,6 +767,7 @@ function parseChatter(parsedata) {
         parsedataCopy[packetFields.EQUIP3] = 'MODE3: ' + parsedataCopy[packetFields.EQUIP3];
         parsedataCopy[packetFields.WATER_TEMP] = 'WtrTemp: ' + parsedataCopy[packetFields.WATER_TEMP];
         parsedataCopy[packetFields.AIR_TEMP] = 'AirTemp: ' + parsedataCopy[packetFields.AIR_TEMP];
+        parsedataCopy[packetFields.SOLAR_TEMP] = 'SolarTemp: ' + parsedataCopy[packetFields.SOLAR_TEMP];
         parsedataCopy[len - 1] = 'ChkH: ' + parsedataCopy[len - 1];
         parsedataCopy[len - 2] = 'ChkL: ' + parsedataCopy[len - 2];
         return (JSON.stringify(parsedataCopy) + ' & Length: ', len);
