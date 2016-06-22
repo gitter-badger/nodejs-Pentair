@@ -495,6 +495,7 @@ function decode(data, counter) {
         status.temp2 = data[packetFields.TEMP_2];
         status.airTemp = data[packetFields.AIR_TEMP];
         status.solarTemp = data[packetFields.SOLAR_TEMP];
+
         if (data[packetFields.UOM] == 0) {
             status.uom = String.fromCharCode(176) + ' Farenheit';
         } else
@@ -504,6 +505,7 @@ function decode(data, counter) {
         } else {
             status.uom = 'Unknown';
         } //176 = degree symbol
+
 
         //Loop through the three bits that start at 3rd (and 4th/5th) bit in the data payload
         for (i = 0; i < circuitArr.length; i++) {
