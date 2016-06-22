@@ -45,6 +45,7 @@ Initial - This version was the first cut at the code
     - Decoding.  The code is getting pretty good at understanding the basic message types.  There are some that I know and still have to decode; some that I know mostly what they do, and some that are still mysteries!  Please help here. 
 
 0.0.3 - More bug fixes.  Now detects heat mode changes for both pool & spa.  Logging is set to very low (console), but still nearly everything will get written to the logs (see 0.0.2 notes). I've noticed that if any material change is made to the configuration (temp, heat mode, circuit names, etc) Pentair will spit out about 40 lines of configuration.  Reading this is a little challenging but I have figured out a few things.
+0.0.4 - Added UOM (Celsius or Farenheit) thank you rflemming for your contributions!  Also added a 'Diff' line to the equipment output to easily see what has changed at the byte level.
 
 # Configuration
 1.  Edit the config.json to match your PHYSICAL circuits.  The code will dynamically map the circuits to their virtual counterparts automatically.  You can not get this from the iPhone, iPad (or Android?) apps.  You will need to go to the controller to get the physical mapping or look in the setup section of your ScreenLogic app.  They aren't numbered, either, so just add them in the order you see them.
@@ -86,15 +87,20 @@ Msg# 326   Remote asking Main to change _feature Path Lights to on_ : [16,32,134
 
 When any circuit is changed, I display a full breakdown of all the circuits and their current status.  This helps them stand out in the logs.  For my pool, a change of a circuit will appear as:
 ```
--->EQUIPMENT 
- Equipment Status:  { time: '22:13',
+-->EQUIPMENT Msg# 25   
+ Equipment Status:  { time: '8:57',
+  waterTemp: 26,
+  temp2: 26,
+  airTemp: 18,
+  solarTemp: 18,
+  uom: '° Celsius',
   Spa: 'off',
   Jets: 'off',
   'Air Blower': 'off',
   Cleaner: 'off',
   'WaterFall 1.5': 'off',
   Pool: 'off',
-  'Spa Lights': 'on',
+  'Spa Lights': 'off',
   'Pool Lights': 'off',
   'Path Lights': 'off',
   '<--SKIP ME-->': 'off',
@@ -105,10 +111,18 @@ When any circuit is changed, I display a full breakdown of all the circuits and 
   'Pool Low': 'on',
   Feature6: 'off',
   Feature7: 'off',
-  Feature8: 'off' } 
+  Feature8: 'off' }
+Msg# 25   What's Different?:  uom: ° Celsius --> ° Farenheit
+                          S       L                                                           W               A   S
+                          O       E           M   M   M                                       T               I   O
+                      D   U       N   H       O   O   O                   U                   R   T           R   L                                       C   C
+                      E   R       G   O   M   D   D   D                   O                   T   M           T   T                                       H   H
+                      S   C       T   U   I   E   E   E                   M                   M   P           M   M                                       K   K
+                      T   E       H   R   N   1   2   3                                       P   2           P   P                                       H   L
+Orig:                15, 16,  2, 29,  8, 57,  0, 64,  0,  0,  0,  0,  0,  4,  3,  0, 64,  4, 26, 26, 32,  0, 18, 18,  0,  0,  3,  0,  0,170,223,  0, 13,  3,202
+ New:                15, 16,  2, 29,  8, 57,  0, 64,  0,  0,  0,  0,  0,  0,  3,  0, 64,  4, 26, 26, 32,  0, 18, 18,  0,  0,  3,  0,  0,170,186,  0, 13,  3,161
+Diff:                                                                     *                                                                   *            
  <-- EQUIPMENT 
-
-What's Different (first occurrence only?:  Spa Lights: on
 ```
 An example of pump communication:  ***As of 0.0.3, these are suppressed.  I would like to have a persistent variable for these like the pool status so they will only display when they change.  TBD.
 ```
@@ -118,6 +132,7 @@ An example of pump communication:  ***As of 0.0.3, these are suppressed.  I woul
 <-- PUMP  Pump1 
 ```
 
+***The following not displayed in console by default starting in 0.0.3.  You can view them in the logs or change the logging options to show in the console.***
 An example of a few lines of known code:
 ```
 Msg# 16   Main asking Pump1 for remote control (turn off pump control panel): [96,16,4,1,255,2,25]
@@ -128,12 +143,12 @@ Msg# 20   Main asking Pump1 to write a _2, 196, 8, _ command: [96,16,1,4,2,196,8
 ```
 
 
-An example of an unknown payload:  ***Turned off by default.
+An example of an unknown payload:  
 ```
 Unknown chatter:  [97,16,4,1,255,2,26]
 ```
 
-An example of an identified instruction/response:
+An example of an identified instruction/response:  
 ```
 Chatter [16,97,4,1,255,2,26] is acknowledgement to instruction [97,16,4,1,255,2,26]
 ```
@@ -155,3 +170,4 @@ WRONG --> I already figured out the mysterious 0x02 bit between Source and Lengt
 1.  [Jason Young](http://www.sdyoung.com/home/decoding-the-pentair-easytouch-rs-485-protocol) (Read both posts, they are a great baseline for knowledge)
 2.  [Michael (lastname unknown)](http://cocoontech.com/forums/topic/13548-intelliflow-pump-rs485-protocol/?p=159671) - Registration required.  Jason Young used this material for his understanding in the protocol as well.  There is a very detailed .txt file with great information that I won't post unless I get permission.
 3.  [Michael Usner](https://github.com/michaelusner/Home-Device-Controller) for taking the work of both of the above and turning it into Javascript code.  
+4.  [rflemming](https://github.com/rflemming) for being the first to contribute some changes to the code.

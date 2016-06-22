@@ -48,9 +48,11 @@ const packetFields = {
     EQUIP1: 6,
     EQUIP2: 7,
     EQUIP3: 8,
+    UOM: 13, //Celsius (4) or Farenheit (0)
     WATER_TEMP: 18,
     TEMP_2: 19,
-    AIR_TEMP: 22
+    AIR_TEMP: 22,
+    SOLAR_TEMP: 23
 }
 
 const pumpPacketFields = {
@@ -313,7 +315,7 @@ sp.on('open', function () {
                             //this isn't working <-- CHECK
                             else if (b.data[i + 8] == 6) {
                                 var str;
-                                
+
                                 console.log('------->FOUND SOMETHING???')
                                 console.log('data: ', JSON.stringify(b.data))
                                 i += 3;
@@ -417,7 +419,7 @@ function dec2bin(dec) {
 function printStatus(data1, data2) {
     str1 = clone(data1);
     str2 = clone(data2);
-
+    str3 = ''; //delta
     spacepadding = '';
     spacepaddingNum = 19;
     for (i = 0; i <= spacepaddingNum; i++) {
@@ -426,31 +428,44 @@ function printStatus(data1, data2) {
 
 
     header = '';
-    header += (spacepadding + '      S       L                                                           W               A \n');
-    header += (spacepadding + '      O       E           M   M   M                                       T               I \n');
-    header += (spacepadding + '  D   U       N   H       O   O   O                                       R   T           R                                           C   C\n');
-    header += (spacepadding + '  E   R       G   O   M   D   D   D                                       T   M           T                                           H   H\n');
-    header += (spacepadding + '  S   C       T   U   I   E   E   E                                       M   P           M                                           K   K\n');
-    header += (spacepadding + '  T   E       H   R   N   1   2   3                                       P   2           P                                           H   L\n');
+    header += (spacepadding + '      S       L                                                           W               A   S\n');
+    header += (spacepadding + '      O       E           M   M   M                                       T               I   O\n');
+    header += (spacepadding + '  D   U       N   H       O   O   O                   U                   R   T           R   L                                       C   C\n');
+    header += (spacepadding + '  E   R       G   O   M   D   D   D                   O                   T   M           T   T                                       H   H\n');
+    header += (spacepadding + '  S   C       T   U   I   E   E   E                   M                   M   P           M   M                                       K   K\n');
+    header += (spacepadding + '  T   E       H   R   N   1   2   3                                       P   2           P   P                                       H   L\n');
     //                    e.g.  15, 16,  2, 29, 11, 33, 32,  0,  0,  0,  0,  0,  0,  0, 51,  0, 64,  4, 79, 79, 32,  0, 69,102,  0,  0,  7,  0,  0,182,215,  0, 13,  4,186
+
+
+    //compare arrays so we can mark which are different
+    //doing string 2 first so we can compare string arrays
+    if (data2 != null || data2 != undefined) {
+        for (i = 0; i < str2.length - 1; i++) {
+            if (str1[i] == str2[i]) {
+                str3 += '    '
+            } else {
+                str3 += '   *'
+            }
+            str2[i] = pad(str2[i], 3);
+        }
+        str2 = ' New: ' + spacepadding.substr(6) + str2 + '\n'
+        str3 = 'Diff:' + spacepadding.substr(6) + str3 + '\n'
+    } else {
+        str2 = ''
+    }
+
 
     //format status1 so numbers are three digits
     for (i = 0; i < str1.length - 1; i++) {
         str1[i] = pad(str1[i], 3);
     }
     str1 = 'Orig: ' + spacepadding.substr(6) + str1 + '\n';
-    //format status2 the same
 
-    if (data2 != null || data2 != undefined) {
-        for (i = 0; i < str2.length - 1; i++) {
-            str2[i] = pad(str2[i], 3);
-        }
-        str2 = ' New: ' + spacepadding.substr(6) + str2 + '\n'
-    } else {
-        str2 = ''
-    }
 
-    str = header + str1 + str2;
+
+
+
+    str = header + str1 + str2 + str3;
 
     return (str);
 }
@@ -479,6 +494,16 @@ function decode(data, counter) {
         status.waterTemp = data[packetFields.WATER_TEMP];
         status.temp2 = data[packetFields.TEMP_2];
         status.airTemp = data[packetFields.AIR_TEMP];
+        status.solarTemp = data[packetFields.SOLAR_TEMP];
+        if (data[packetFields.UOM] == 0) {
+            status.uom = String.fromCharCode(176) + ' Farenheit';
+        } else
+        if (data[packetFields.UOM] == 4) {
+            status.uom = String.fromCharCode(176) + ' Celsius';
+
+        } else {
+            status.uom = 'Unknown';
+        } //176 = degree symbol
 
         //Loop through the three bits that start at 3rd (and 4th/5th) bit in the data payload
         for (i = 0; i < circuitArr.length; i++) {
@@ -540,11 +565,12 @@ function decode(data, counter) {
 
 
         // if the time field is whacked, don't send any data.  <-- leftover code.  can probable eliminate
-        d = status.time.split(":")
+        d = status.time.split(":");
         if (parseInt(d[0]) < 24 && parseInt(d[1]) < 60) {
             if (loglevel) console.log('-->EQUIPMENT Msg# ', counter, '\n Equipment Status verbose: ', JSON.stringify(status), '\n', parseChatter(data), '\n <-- EQUIPMENT \n');
         }
-    } else if (((data[packetFields.FROM] == ctrl.PUMP1 || data[packetFields.FROM] == ctrl.PUMP2) && data[packetFields.DEST] == ctrl.MAIN) || ((data[packetFields.DEST] == ctrl.PUMP1 || data[packetFields.DEST] == ctrl.PUMP2) && data[packetFields.FROM] == ctrl.MAIN))
+    } else
+    if (((data[packetFields.FROM] == ctrl.PUMP1 || data[packetFields.FROM] == ctrl.PUMP2) && data[packetFields.DEST] == ctrl.MAIN) || ((data[packetFields.DEST] == ctrl.PUMP1 || data[packetFields.DEST] == ctrl.PUMP2) && data[packetFields.FROM] == ctrl.MAIN))
 
     //  --> Could be from/to control and from/to pump.  Check all????  Or is data length 8 sufficient
     //&& data[packetFields.FROM] == ctrl.MAIN  && (data[packetFields.DEST] == ctrl.PUMP1 || data[packetFields.DEST] == ctrl.PUMP2)
@@ -693,8 +719,8 @@ function decode(data, counter) {
             } else if (data[3] == 4) {
                 status.POOLSETPOINT = data[4];
                 status.SPASETPOINT = data[5];
-                status.POOLHEATMODE = heatMode[data[6]&3]; //mask the data[6] with 0011
-                status.SPAHEATMODE = heatMode[(data[6]&12)>>2]; //mask the data[6] with 1100 and shift right two places
+                status.POOLHEATMODE = heatMode[data[6] & 3]; //mask the data[6] with 0011
+                status.SPAHEATMODE = heatMode[(data[6] & 12) >> 2]; //mask the data[6] with 1100 and shift right two places
                 console.log('Msg# %s   %s asking %s to change pool heat mode to %s (@ %s degrees) % spa heat mode to %s (at %s degrees): %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], status.POOLHEATMODE, status.POOLSETPOINT, status.SPAHEATMODE, status.SPASETPOINT, JSON.stringify(data));
                 decoded = true;
             } else if (data[3] == 16) {
@@ -765,6 +791,7 @@ function parseChatter(parsedata) {
         parsedataCopy[packetFields.EQUIP3] = 'MODE3: ' + parsedataCopy[packetFields.EQUIP3];
         parsedataCopy[packetFields.WATER_TEMP] = 'WtrTemp: ' + parsedataCopy[packetFields.WATER_TEMP];
         parsedataCopy[packetFields.AIR_TEMP] = 'AirTemp: ' + parsedataCopy[packetFields.AIR_TEMP];
+        parsedataCopy[packetFields.SOLAR_TEMP] = 'SolarTemp: ' + parsedataCopy[packetFields.SOLAR_TEMP];
         parsedataCopy[len - 1] = 'ChkH: ' + parsedataCopy[len - 1];
         parsedataCopy[len - 2] = 'ChkL: ' + parsedataCopy[len - 2];
         return (JSON.stringify(parsedataCopy) + ' & Length: ', len);
