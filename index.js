@@ -1,4 +1,11 @@
-var serialport = require("serialport");
+(function () {
+    'use strict';
+    // this function is strict...
+}());
+
+
+
+const serialport = require("serialport");
 var SerialPort = serialport.SerialPort;
 var sp = new SerialPort("/dev/ttyUSB0", {
     baudrate: 9600,
@@ -13,6 +20,7 @@ var data2; //variable to hold all serialport.open data; appends to this with eac
 var loglevel = 0; //1=more, 0=less
 var currentStatus; // persistent object to hold pool equipment status.
 var currentStatusBytes; //persistent variable to hold full bytes of pool status
+var currentWhatsDifferent; //persistent variable to hold what's different
 var instruction = ''; //var to hold potential chatter instructions
 var processingBuffer = 0; //flag to tell us if we are processing the buffer currently
 var counter = 0; //log counter to help match messages with buffer in log
@@ -20,6 +28,8 @@ var counter = 0; //log counter to help match messages with buffer in log
 var pumpMessages = 0; //variable if we want to output pump messages or not
 var duplicateMessages = 0; //variable if we want to output duplicate broadcast messages
 var showConsoleNotDecoded = 0; //variable to hide any unknown messages
+
+
 
 const state = {
     OFF: 0,
@@ -142,7 +152,7 @@ var fulllogger = new(winston.Logger)({
 
 
 var configurationFile = 'config.json';
-fs = require('fs');
+const fs = require('fs');
 var poolConfig = JSON.parse(fs.readFileSync(configurationFile));
 
 
@@ -156,6 +166,7 @@ var circuitArr = [
 
 for (var key in poolConfig.Pentair) {
     if (poolConfig.Pentair.hasOwnProperty(key)) {
+        var myEQ = 0;
         if (j < 8) {
             myEQ = 0; //8 bits for first mode byte
         } else if (j >= 8 && j < 16) {
@@ -383,18 +394,18 @@ function checksum(chatterdata, callback, counter) {
     //make a copy so when we callback the decode method it isn't changing our log output in Winston
     fulllogger.silly("Msg# %s   Checking checksum on chatter: ", chatterdata);
     var chatterCopy = chatterdata.slice(0);
-    len = chatterCopy.length;
+    var len = chatterCopy.length;
 
     //checksum is calculated by 256*2nd to last bit + last bit 
     var chatterdatachecksum = (chatterCopy[len - 2] * 256) + chatterCopy[len - 1];
-    databytes = 0;
+    var databytes = 0;
 
     // add up the data in the payload
-    for (i = 0; i < len - 2; i++) {
+    for (var i = 0; i < len - 2; i++) {
         databytes += chatterCopy[i];
     }
 
-    validChatter = (chatterdatachecksum == databytes);
+    var validChatter = (chatterdatachecksum == databytes);
     if (!validChatter) {
         fulllogger.warn('Msg# %s   Mismatch on checksum:   %s!=%s   %s', counter, chatterdatachecksum, databytes, chatterCopy)
         console.log('Msg# %s   Mismatch on checksum:    %s!=%s   %s', counter, chatterdatachecksum, databytes, chatterCopy)
@@ -422,7 +433,7 @@ function printStatus(data1, data2) {
     str3 = ''; //delta
     spacepadding = '';
     spacepaddingNum = 19;
-    for (i = 0; i <= spacepaddingNum; i++) {
+    for (var i = 0; i <= spacepaddingNum; i++) {
         spacepadding += ' ';
     }
 
@@ -440,7 +451,7 @@ function printStatus(data1, data2) {
     //compare arrays so we can mark which are different
     //doing string 2 first so we can compare string arrays
     if (data2 != null || data2 != undefined) {
-        for (i = 0; i < str2.length - 1; i++) {
+        for (var i = 0; i < str2.length - 1; i++) {
             if (str1[i] == str2[i]) {
                 str3 += '    '
             } else {
@@ -456,7 +467,7 @@ function printStatus(data1, data2) {
 
 
     //format status1 so numbers are three digits
-    for (i = 0; i < str1.length - 1; i++) {
+    for (var i = 0; i < str1.length - 1; i++) {
         str1[i] = pad(str1[i], 3);
     }
     str1 = 'Orig: ' + spacepadding.substr(6) + str1 + '\n';
@@ -508,10 +519,10 @@ function decode(data, counter) {
 
 
         //Loop through the three bits that start at 3rd (and 4th/5th) bit in the data payload
-        for (i = 0; i < circuitArr.length; i++) {
+        for (var i = 0; i < circuitArr.length; i++) {
             //loop through all physical circuits within each of the bits
             for (j = 0; j < circuitArr[i].length; j++) {
-                tempFeature = circuitArr[i][j]; //name of circuit
+                var tempFeature = circuitArr[i][j]; //name of circuit
                 equip = data[packetFields.EQUIP1 + i]
                 status[tempFeature] = (equip & (1 << (j))) >> j ? "on" : "off"
             }
@@ -538,8 +549,8 @@ function decode(data, counter) {
 
 
                 console.log('-->EQUIPMENT Msg# %s   \n Equipment Status: ', counter, currentStatus)
-
-                console.log('Msg# %s   What\'s Different?: %s', counter, currentStatus.whatsDifferent(status))
+                currentWhatsDifferent = currentStatus.whatsDifferent(status);
+                console.log('Msg# %s   What\'s Different?: %s', counter, currentWhatsDifferent)
                 console.log(printStatus(currentStatusBytes, data));
                 console.log('\n <-- EQUIPMENT \n');
 
@@ -547,6 +558,9 @@ function decode(data, counter) {
                 currentStatus = clone(status);
                 currentStatusBytes = data.slice(0);
                 decoded = true;
+                io.sockets.emit('status',
+                    currentStatus
+                )
 
             } else {
                 //let's see if it is the exact same packet or if there are variations in the data we have not interpreted yet
@@ -571,6 +585,7 @@ function decode(data, counter) {
         if (parseInt(d[0]) < 24 && parseInt(d[1]) < 60) {
             if (loglevel) console.log('-->EQUIPMENT Msg# ', counter, '\n Equipment Status verbose: ', JSON.stringify(status), '\n', parseChatter(data), '\n <-- EQUIPMENT \n');
         }
+
     } else
     if (((data[packetFields.FROM] == ctrl.PUMP1 || data[packetFields.FROM] == ctrl.PUMP2) && data[packetFields.DEST] == ctrl.MAIN) || ((data[packetFields.DEST] == ctrl.PUMP1 || data[packetFields.DEST] == ctrl.PUMP2) && data[packetFields.FROM] == ctrl.MAIN))
 
@@ -653,7 +668,7 @@ function decode(data, counter) {
             if (data[pumpPacketFields.LENGTH] == 4) //This might be the only packet where isResponse() won't work because the pump sends back a validation command
             {
                 var pumpCommand = '';
-                for (i = 1; i < data[pumpPacketFields.LENGTH]; i++) {
+                for (var i = 1; i < data[pumpPacketFields.LENGTH]; i++) {
                     pumpCommand += data[i + pumpPacketFields.LENGTH] //Not sure if it is a coincidence that pumpPacketFields.LENGTH ==4, but the 4th byte is the start of the message.
                     pumpCommand += ', '
                 }
@@ -729,7 +744,7 @@ function decode(data, counter) {
                 //165, 10, 15, 16, 10, 12, 0, 87, 116, 114, 70, 97, 108, 108, 32, 49, 0, 251, 4, 236
                 console.log('12! else: %s', JSON.stringify(data))
                 var myString = '';
-                for (i = 0; i < data.length; i++) {
+                for (var i = 0; i < data.length; i++) {
                     myString += String.fromCharCode(data[i])
                 }
                 console.log('Msg# %s   %s sending %s _%s_ : %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], myString, JSON.stringify(data));
@@ -747,183 +762,134 @@ function decode(data, counter) {
     return true; //fix this; turn into callback(?)  What do we want to do with it?
 }
 
-//This function just for visual/log usage.
-function parseChatter(parsedata) {
-    //make copy so we don't change the original by reference
-    parsedataCopy = parsedata.slice(0);
-    console.log(JSON.stringify(parsedataCopy));
-    len = parsedataCopy.length;
 
-    if (len == 35) { //Broadcast packet
-        if (loglevel) {
-            _equip1 = parsedataCopy[packetFields.EQUIP1]
-            _equip2 = parsedataCopy[packetFields.EQUIP2]
-            _equip3 = parsedataCopy[packetFields.EQUIP3]
-            console.log('Equip 1')
-            console.log('circuit1 (Spa)    : ', _equip1 & 1)
-            console.log('bit2 (Jets)       : ', (_equip1 & 2) >> 1)
-            console.log('bit3 (Air Blower ): ', (_equip1 & 4) >> 2)
-            console.log('bit4 (Cleaner)    : ', (_equip1 & 8) >> 3)
-            console.log('bit5 (WtrFall1.5) : ', (_equip1 & 16) >> 4)
-            console.log('bit6 (Pool)       : ', (_equip1 & 32) >> 5)
-            console.log('bit7 (Spa Lights?): ', (_equip1 & 64) >> 6)
-            console.log('bit8 (Pool Lights): ', (_equip1 & 128) >> 7)
-            console.log('Equip2')
-            console.log('bit1 (Path Lights): ', _equip2 & 1)
-            console.log('bit2 (?)          : ', (_equip2 & 2) >> 1)
-            console.log('bit3 (Spillway)   : ', (_equip2 & 4) >> 2)
-            console.log('bit4 (WtrFall 1 ) : ', (_equip2 & 8) >> 3)
-            console.log('bit5 (WtrFall 2 ) : ', (_equip2 & 16) >> 4)
-            console.log('bit6 (WtrFall 3 ) : ', (_equip2 & 32) >> 5)
-            console.log('bit7 (Pool low)   : ', (_equip2 & 64) >> 6)
-            console.log('bit8 (Feature 6)  : ', (_equip2 & 128) >> 7)
-            console.log('Equip3')
-            console.log('bit 1 (Feature 7)', _equip3 & 1)
-            console.log('bit 2 (Feature 8)', (_equip3 & 2) >> 1)
-        }
-
-        parsedataCopy[packetFields.FROM] = 'Src: ' + parsedataCopy[packetFields.FROM];
-        parsedataCopy[packetFields.DEST] = 'Dest: ' + parsedataCopy[packetFields.DEST];
-        parsedataCopy[packetFields.ACTION] = 'Action: ' + parsedataCopy[packetFields.ACTION];
-        parsedataCopy[packetFields.DATASIZE] = 'Len: ' + parsedataCopy[packetFields.DATASIZE];
-        parsedataCopy[packetFields.HOUR] = 'Hr: ' + parsedataCopy[packetFields.HOUR];
-        parsedataCopy[packetFields.MIN] = 'Min: ' + parsedataCopy[packetFields.MIN];
-        parsedataCopy[packetFields.EQUIP1] = 'MODE1: ' + parsedataCopy[packetFields.EQUIP1];
-        parsedataCopy[packetFields.EQUIP2] = 'MODE2: ' + parsedataCopy[packetFields.EQUIP2];
-        parsedataCopy[packetFields.EQUIP3] = 'MODE3: ' + parsedataCopy[packetFields.EQUIP3];
-        parsedataCopy[packetFields.WATER_TEMP] = 'WtrTemp: ' + parsedataCopy[packetFields.WATER_TEMP];
-        parsedataCopy[packetFields.AIR_TEMP] = 'AirTemp: ' + parsedataCopy[packetFields.AIR_TEMP];
-        parsedataCopy[packetFields.SOLAR_TEMP] = 'SolarTemp: ' + parsedataCopy[packetFields.SOLAR_TEMP];
-        parsedataCopy[len - 1] = 'ChkH: ' + parsedataCopy[len - 1];
-        parsedataCopy[len - 2] = 'ChkL: ' + parsedataCopy[len - 2];
-        return (JSON.stringify(parsedataCopy) + ' & Length: ', len);
-    } else if (len == 7) //Pump actions?
-    {
-        returnStr = 'Unknown chatter of length: %s to Dest: %s from %S ', len, ctrlString[parsedataCopy[packetFields.DEST]], ctrlString[parsedataCopy[packetFields.SRC]];
-        parsedataCopy[packetFields.DEST] = 'Dest: ' + parsedataCopy[packetFields.DEST];
-        parsedataCopy[packetFields.FROM] = 'Src: ' + parsedataCopy[packetFields.FROM];
-        return (returnStr + 'Pump Instructions? \n', JSON.stringify(parsedataCopy) + ' & Length: ', len);
-    }
-}
 
 
 
 //Credit to this function belongs somewhere on Stackoverflow.  Need to find it to give credit.
-Object.prototype.equals = function (object2) {
-    //For the first loop, we only check for types
-    for (propName in this) {
-        //Check for inherited methods and properties - like .equals itself
-        //https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/hasOwnProperty
-        //Return false if the return value is different
-        if (this.hasOwnProperty(propName) != object2.hasOwnProperty(propName)) {
-            return false;
-        }
-        //Check instance type
-        else if (typeof this[propName] != typeof object2[propName]) {
-            //Different types => not equal
-            return false;
-        }
-    }
-    //Now a deeper check using other objects property names
-    for (propName in object2) {
-        //We must check instances anyway, there may be a property that only exists in object2
-        //I wonder, if remembering the checked values from the first loop would be faster or not 
-        if (this.hasOwnProperty(propName) != object2.hasOwnProperty(propName)) {
-            return false;
-        } else if (typeof this[propName] != typeof object2[propName]) {
-            return false;
-        }
-        //If the property is inherited, do not check any more (it must be equa if both objects inherit it)
-        if (!this.hasOwnProperty(propName))
-            continue;
-
-        //Now the detail check and recursion
-
-        //This returns the script back to the array comparing
-        /**REQUIRES Array.equals**/
-        if (this[propName] instanceof Array && object2[propName] instanceof Array) {
-            // recurse into the nested arrays
-            if (!this[propName].equals(object2[propName]))
+Object.defineProperty(Object.prototype, "equals", {
+    enumerable: false,
+    writable: true,
+    value: function (object2) {
+        //For the first loop, we only check for types
+        for (propName in this) {
+            //Check for inherited methods and properties - like .equals itself
+            //https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/hasOwnProperty
+            //Return false if the return value is different
+            if (this.hasOwnProperty(propName) != object2.hasOwnProperty(propName)) {
                 return false;
-        } else if (this[propName] instanceof Object && object2[propName] instanceof Object) {
-            // recurse into another objects
-            //console.log("Recursing to compare ", this[propName],"with",object2[propName], " both named \""+propName+"\"");
-            if (!this[propName].equals(object2[propName]))
+            }
+            //Check instance type
+            else if (typeof this[propName] != typeof object2[propName]) {
+                //Different types => not equal
                 return false;
+            }
         }
-        //Normal value comparison for strings and numbers
-        else if (this[propName] != object2[propName]) {
-            return false;
+        //Now a deeper check using other objects property names
+        for (propName in object2) {
+            //We must check instances anyway, there may be a property that only exists in object2
+            //I wonder, if remembering the checked values from the first loop would be faster or not 
+            if (this.hasOwnProperty(propName) != object2.hasOwnProperty(propName)) {
+                return false;
+            } else if (typeof this[propName] != typeof object2[propName]) {
+                return false;
+            }
+            //If the property is inherited, do not check any more (it must be equa if both objects inherit it)
+            if (!this.hasOwnProperty(propName))
+                continue;
+
+            //Now the detail check and recursion
+
+            //This returns the script back to the array comparing
+            /**REQUIRES Array.equals**/
+            if (this[propName] instanceof Array && object2[propName] instanceof Array) {
+                // recurse into the nested arrays
+                if (!this[propName].equals(object2[propName]))
+                    return false;
+            } else if (this[propName] instanceof Object && object2[propName] instanceof Object) {
+                // recurse into another objects
+                //console.log("Recursing to compare ", this[propName],"with",object2[propName], " both named \""+propName+"\"");
+                if (!this[propName].equals(object2[propName]))
+                    return false;
+            }
+            //Normal value comparison for strings and numbers
+            else if (this[propName] != object2[propName]) {
+                return false;
+            }
         }
+        //If everything passed, let's say YES
+        return true;
     }
-    //If everything passed, let's say YES
-    return true;
-}
+})
 
 
 //This function adapted from the prototype.equals method above
-Object.prototype.whatsDifferent = function (object2) {
-    //For the first loop, we only check for types
-    var diffString = '';
-    for (propName in this) {
-        //Check for inherited methods and properties - like .equals itself
-        //https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/hasOwnProperty
-        //Return false if the return value is different
-        if (this.hasOwnProperty(propName) != object2.hasOwnProperty(propName)) {
-            diffString += ' ' + this.hasOwnProperty(propName);
-            //return this.hasOwnProperty(propName);
+Object.defineProperty(Object.prototype, "whatsDifferent", {
+    enumerable: false,
+    writable: true,
+    value: function (object2) {
+        //For the first loop, we only check for types
+        var diffString = '';
+        for (propName in this) {
+            //Check for inherited methods and properties - like .equals itself
+            //https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/hasOwnProperty
+            //Return false if the return value is different
+            if (this.hasOwnProperty(propName) != object2.hasOwnProperty(propName)) {
+                diffString += ' ' + this.hasOwnProperty(propName);
+                //return this.hasOwnProperty(propName);
+            }
+            //Check instance type
+            else if (typeof this[propName] != typeof object2[propName]) {
+                //Different types => not equal
+                diffString += ' Object type '
+                    //return 'Object type';
+            }
         }
-        //Check instance type
-        else if (typeof this[propName] != typeof object2[propName]) {
-            //Different types => not equal
-            diffString += ' Object type '
-                //return 'Object type';
-        }
-    }
-    //Now a deeper check using other objects property names
-    for (propName in object2) {
-        //We must check instances anyway, there may be a property that only exists in object2
-        //I wonder, if remembering the checked values from the first loop would be faster or not 
-        if (this.hasOwnProperty(propName) != object2.hasOwnProperty(propName)) {
-            diffString += ' ' + this.hasOwnProperty(propName);
-            //return this.hasOwnProperty(propName);
-        } else if (typeof this[propName] != typeof object2[propName]) {
-            diffString += ' Object type '
-                //return 'Object type';
-        }
-        //If the property is inherited, do not check any more (it must be equa if both objects inherit it)
-        if (!this.hasOwnProperty(propName))
-            continue;
+        //Now a deeper check using other objects property names
+        for (propName in object2) {
+            //We must check instances anyway, there may be a property that only exists in object2
+            //I wonder, if remembering the checked values from the first loop would be faster or not 
+            if (this.hasOwnProperty(propName) != object2.hasOwnProperty(propName)) {
+                diffString += ' ' + this.hasOwnProperty(propName);
+                //return this.hasOwnProperty(propName);
+            } else if (typeof this[propName] != typeof object2[propName]) {
+                diffString += ' Object type '
+                    //return 'Object type';
+            }
+            //If the property is inherited, do not check any more (it must be equa if both objects inherit it)
+            if (!this.hasOwnProperty(propName))
+                continue;
 
-        //Now the detail check and recursion
+            //Now the detail check and recursion
 
-        //This returns the script back to the array comparing
-        /**REQUIRES Array.equals**/
-        if (this[propName] instanceof Array && object2[propName] instanceof Array) {
-            // recurse into the nested arrays
-            if (!this[propName].equals(object2[propName]))
-                diffString += ' '
-            propName + ': ' + this[propName] + ' --> ' + object2[propName];
-            //return (propName + ': ' + this[propName]);
-        } else if (this[propName] instanceof Object && object2[propName] instanceof Object) {
-            // recurse into another objects
-            //console.log("Recursing to compare ", this[propName],"with",object2[propName], " both named \""+propName+"\"");
-            if (!this[propName].equals(object2[propName]))
+            //This returns the script back to the array comparing
+            /**REQUIRES Array.equals**/
+            if (this[propName] instanceof Array && object2[propName] instanceof Array) {
+                // recurse into the nested arrays
+                if (!this[propName].equals(object2[propName]))
+                    diffString += ' '
+                propName + ': ' + this[propName] + ' --> ' + object2[propName];
+                //return (propName + ': ' + this[propName]);
+            } else if (this[propName] instanceof Object && object2[propName] instanceof Object) {
+                // recurse into another objects
+                //console.log("Recursing to compare ", this[propName],"with",object2[propName], " both named \""+propName+"\"");
+                if (!this[propName].equals(object2[propName]))
+                    diffString += ' ' + propName + ': ' + this[propName] + ' --> ' + object2[propName]
+                    //return (propName + ': ' + this[propName]);
+            }
+            //Normal value comparison for strings and numbers
+            else if (this[propName] != object2[propName]) {
                 diffString += ' ' + propName + ': ' + this[propName] + ' --> ' + object2[propName]
-                //return (propName + ': ' + this[propName]);
+                    //return (propName + ': ' + this[propName]);
+            }
         }
-        //Normal value comparison for strings and numbers
-        else if (this[propName] != object2[propName]) {
-            diffString += ' ' + propName + ': ' + this[propName] + ' --> ' + object2[propName]
-                //return (propName + ': ' + this[propName]);
+        if (diffString == '') {
+            return 'Nothing!';
+        } else {
+            return diffString;
         }
     }
-    if (diffString == '') {
-        return 'Nothing!';
-    } else {
-        return diffString;
-    }
-}
+});
 
 //Credit for this function belongs to: http://stackoverflow.com/questions/728360/most-elegant-way-to-clone-a-javascript-object
 function clone(obj) {
@@ -935,22 +901,68 @@ function clone(obj) {
     return copy;
 }
 
-Object.prototype.isResponse = function (object2) {
+Object.defineProperty(Object.prototype, "isResponse", {
+    enumerable: false,
+    writable: true,
+    value: function (object2) {
 
-    //make copies of the object so we assign the variables by value and not change the originals (by reference)
-    //need to use the clone function because slice doesn't work on objects for by value copy
-    tempObj = clone(this);
+        //make copies of the object so we assign the variables by value and not change the originals (by reference)
+        //need to use the clone function because slice doesn't work on objects for by value copy
+        tempObj = clone(this);
 
-    //this doesn't work -- it copies by reference not by value
-    //tempObj = this.slice();
+        //this doesn't work -- it copies by reference not by value
+        //tempObj = this.slice();
 
-    objSrc = this[packetFields.FROM];
-    objDest = this[packetFields.DEST];
-    tempObj[packetFields.DEST] = objSrc;
-    tempObj[packetFields.FROM] = objDest;
+        objSrc = this[packetFields.FROM];
+        objDest = this[packetFields.DEST];
+        tempObj[packetFields.DEST] = objSrc;
+        tempObj[packetFields.FROM] = objDest;
 
 
-    //If the objects are now equal, return true.
-    return (tempObj.equals(object2));
+        //If the objects are now equal, return true.
+        return (tempObj.equals(object2));
+    }
+});
 
-}
+
+
+//<----  START SERVER CODE
+
+// Setup basic express server
+var express = require('express');
+var app = express();
+var server = require('http').createServer(app);
+var io = require('socket.io')(server);
+var port = process.env.PORT || 3000;
+
+server.listen(port, function () {
+    console.log('Server listening at port %d', port);
+});
+
+// Routing
+app.use(express.static(__dirname + '/public'));
+
+app.get('/status', function (req, res) {
+        res.send(currentStatus)
+    })
+
+app.get('/equipment', function (req, res) {
+        res.send(poolConfigS)
+    })
+
+var numUsers = 0;
+
+io.on('connection', function (socket) {
+
+    // when the client emits 'add user', this listens and executes
+    socket.on('toggleEquipment', function (equipment) {
+        
+        console.log('User wants to toggle: ' + equipment)
+
+    });
+    io.sockets.emit('status',
+                    currentStatus
+                )
+});
+
+//---->  END SERVER CODE
