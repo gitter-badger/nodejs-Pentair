@@ -1,5 +1,6 @@
 {
     "Pentair": {
+        "NO_LONGER_NEEDED": "See Readme, will remove soon",
         "circuit1": "Spa",
         "circuit2": "Jets",
         "circuit3": "Air Blower",

@@ -21,42 +21,36 @@ $(function () {
     var socket = io();
 
 
-    $("p").on("click", function(){
-        alert("called")
-    })   
+    $('body').on('click', 'p.status2', function () {
+        <!-- alert( "My alert: " + $(this).attr('id') +" name: " + $(this).data('name')  + " data: " + $(this).data($(this).data('name')))  -->
+        setEquipmentStatus($(this).data('name'));
+    })
 
 
-    
-    
 
-    
-    
-    
     function addStatus(data) {
 
-        
-        
-        
-if (!data) alert ("reload page.  pool data not ready")
+
+
+
+        if (!data) alert("reload page.  pool data not ready")
         $.each(data, function (key, value) {
-            
+
             var keyNoSpace = key.split(' ').join('_'); //if spaces, replace with _
-     
+
             if (document.getElementById(keyNoSpace)) {
 
                 //update the element
-                $('#' + keyNoSpace).text(key + ' is ' + value).data(key)
+                $('#' + keyNoSpace).text(key + ' is ' + value).data(key,value).data()
 
-                console.log('Found existing element: ' + $('#' + keyNoSpace).text())
+                <!-- console.log('Found existing element: ' + $('#' + keyNoSpace).text())  -->
             } else {
-                console.log('2');
-                $('#status').append('<p  id="' + keyNoSpace+ '">' + key + ' is ' + value + '</p>');
-                
-                console.log('Creating new element: ' + key)
+                $('#status').append('<p  class="status2" id="' + keyNoSpace + '">' + key + ' is ' + value + '</p>');
+                $('#'+keyNoSpace).data(keyNoSpace,value).data('name',key);
+
+                <!-- console.log('Creating new element: ' + key) -->
             }
-                                //.append('<li id="' + keyNoSpace + '">' + key + ' is ' + value + '    </li>')
-            //console.log('key: ' + key + ' value: ' + value);
-            //$status.append('key: ' + key + ' value: ' + value)
+
         });
 
         $status.show();
@@ -66,9 +60,9 @@ if (!data) alert ("reload page.  pool data not ready")
 
     // Socket events
 
-    function setEquipmentStatus() {
-        input = $('#equipmentChange').text(input).text();
-        socket.emit('toggleEquipment', input)
+    function setEquipmentStatus(equipment) {
+        socket.emit('toggleEquipment', equipment)
+        //There is a problem here with some names, like 'WtrFall 1.5'.  The . is a problem.
 
     };
     // Whenever the server emits 'status', update the page

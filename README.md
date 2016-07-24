@@ -1,3 +1,18 @@
+# Latest version 0.0.6 released 7/24/16.  Please see important notes below in version info!
+tl;dr
+
+ Important changes:
+
+ Configuration is now read from your pool.  In order to force the controller to broadcast the configuration, change the setpoint of your heater (or any configuration that is saved in the controller) and it will rebroadcast the pool configuration.
+
+ I am working on writing back to the bus and once I can successfully do this I will ask the controller for the config so this step is not necessary.
+
+ Visit http://_your_machine_name_:3000 to see a basic UI
+
+ Visit http://_your_machine_name_:3000/debug.html for a way to listen for specific messages
+
+
+
 # nodejs-Pentair
 
 This is a set of test code to read the Pentair system messages off of the RS-485 serial bus.  
@@ -48,6 +63,13 @@ Initial - This version was the first cut at the code
 0.0.4 - Added UOM (Celsius or Farenheit) thank you rflemming for your contributions!  Also added a 'Diff' line to the equipment output to easily see what has changed at the byte level.
 
 0.0.5 - Added a very simple websocket resource (http://server:3000) which will display the output from the pool.  Will make it pretty, and interactive, shortly.
+
+0.0.6 - 
+* Circuits, custom names, and schedules can now be read from the configuration broadcast by the pool.  However, you need to force the configuration to be re-broadcast by changing the heat set point.  This will change in future versions when successful writing to the serial bus is included.
+* http://_your_machine_name_:3000 to see a basic UI (websockets with persistent updates on status)
+* http://_your_machine_name_:3000/debug.html for a way to listen for specific messages
+* It is clear that I will need to change around the internal structure of how the circuits and equipment information is stored so that it can be better presented in the UI and display can be dependent on circuit type (pool, spa, lights, etc) and desired changes (on/off, set temperature, set mode, etc) can know what information is needed
+
 
 # Configuration
 1.  Edit the config.json to match your PHYSICAL circuits.  The code will dynamically map the circuits to their virtual counterparts automatically.  You can not get this from the iPhone, iPad (or Android?) apps.  You will need to go to the controller to get the physical mapping or look in the setup section of your ScreenLogic app.  They aren't numbered, either, so just add them in the order you see them.
