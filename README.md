@@ -72,33 +72,11 @@ Initial - This version was the first cut at the code
 
 
 # Configuration
-1.  Edit the config.json to match your PHYSICAL circuits.  The code will dynamically map the circuits to their virtual counterparts automatically.  You can not get this from the iPhone, iPad (or Android?) apps.  You will need to go to the controller to get the physical mapping or look in the setup section of your ScreenLogic app.  They aren't numbered, either, so just add them in the order you see them.
+~~1.  Edit the config.json to match your PHYSICAL circuits.  The code will dynamically map the circuits to their virtual counterparts automatically.  You can not get this from the iPhone, iPad (or Android?) apps.  You will need to go to the controller to get the physical mapping or look in the setup section of your ScreenLogic app.  They aren't numbered, either, so just add them in the order you see them.~~
 
-*You must skip circuit 10.  I don't know why, or I'm missing something, but it doesn't seem to be used.*
-    ```
-    {
-    "Pentair": {
-        "circuit1": "Spa",
-        "circuit2": "Jets",
-        "circuit3": "Air Blower",
-        "circuit4": "Cleaner",
-        "circuit5": "WaterFall 1.5",
-        "circuit6": "Pool",
-        "circuit7": "Spa Lights",
-        "circuit8": "Pool Lights",
-        "circuit9": "Path Lights",
-        "circuit10": "<--SKIP ME-->",
-        "circuit11": "Spillway",
-        "circuit12": "Waterfall 1",
-        "circuit13": "Waterfall 2",
-        "circuit14": "Waterfall 3",
-        "circuit15": "Pool Low",
-        "circuit16": "Feature6",
-        "circuit17": "Feature7",
-        "circuit18": "Feature8"
-    }
-}
-        ```
+As of 0.0.6, no configuration is necessary.  You simply need to force the controller to broadcast the configuration again by changing the heat set point (or other configuration command) and the app will read your circuit names.
+
+
 # Methodology
 
 The RS-485 bus is VERY active!  It sends a lot of broadcasts, and instructions/acknowledgements.  I tried to filter out all repeating messages, and add some text descriptions to the known (but not decoded) messages like heater commands, valves, etc.  We already have some of the pump commands.
@@ -185,8 +163,6 @@ Chatter [16,97,4,1,255,2,26] is acknowledgement to instruction [97,16,4,1,255,2,
 
 # Protocol
 If you read through the below links, you'll quickly learn that the packets can vary their meaning based upon who they are sending the message to, and what they want to say.  It appears the same message can come in 35, 38 or 32 bytes, but of course there will be some differences there.
-
-WRONG --> I already figured out the mysterious 0x02 bit between Source and Length refers to the heat command of the pool circuit.  If this 2 is present, the heat mode is either heater/solar pref/solar only.  If the heat mode is off, this bit is excluded and the packet looks completely different (on the to-do list.)
 
 
 # Credit
