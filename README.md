@@ -34,7 +34,8 @@ Let me elaborate on #3.  Both the awesome work of Jason Y and Michael were speci
 1. This code **REQUIRES** a RS485 serial module.  There are plenty of sites out there that describe the RS485 and differences from RS232 so I won't go into detail here.  I purchased [EZSync FTDI](http://www.amazon.com/EZSync-RS485-USB-RS485-WE-compatible-EZSync010/dp/B010KJSCR8?ie=UTF8&psc=1&redirect=true&ref_=oh_aui_detailpage_o01_s00) but I think others will do
 2.  I will add more later about the actual wiring of the adapter, but I used the Ground<--> Ground, and the DATA+ and DATA- (no power needed as your Pentair adapters already are powered and so is my RS-485 adapter.
 3.  To see if you are getting the proper communications from the bus, before you even try to run this program, run from your *nix command line ```od -x < /dev/ttyUSB0```.  Of course, you'll need to change the address of your RS-485 adapter if it isn't the same as mine (here and in the code).
-⋅⋅3a   You'll know you have the wires write when the output of this command looks like (you should see multiple repititions of ffa5ff): 
+
+* 3a   You'll know you have the wires write when the output of this command looks like (you should see multiple repititions of ffa5ff): 
 ```
 0002240 0000 0000 0000 0000 0000 ff00 ffff ffff
 0002260 *ffff 00ff a5ff* 0f0a 0210 161d 000c 0040
@@ -42,7 +43,8 @@ Let me elaborate on #3.  Both the awesome work of Jason Y and Michael were speci
 0002320 0400 0000 597a 0d00 af03 00ff a5ff 100a
 0002340 e722 0001 c901 ffff ffff ffff ffff ff00
 ```
-⋅⋅3b.  This is the WRONG wiring (no ffa5ff present).
+
+* 3b.  This is the WRONG wiring (no ffa5ff present).
 ```
 0001440 0000 0000 0000 0000 0000 0000 0000 6a01
 0001460 e1d6 fbdf d3c5 fff3 ff7f ffff ffff f9ff
