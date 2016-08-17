@@ -32,7 +32,8 @@ Let me elaborate on #3.  Both the awesome work of Jason Y and Michael were speci
 1. This code **REQUIRES** a RS485 serial module.  There are plenty of sites out there that describe the RS485 and differences from RS232 so I won't go into detail here.  I purchased [EZSync FTDI](http://www.amazon.com/EZSync-RS485-USB-RS485-WE-compatible-EZSync010/dp/B010KJSCR8?ie=UTF8&psc=1&redirect=true&ref_=oh_aui_detailpage_o01_s00) but I think others will do
 2.  I will add more later about the actual wiring of the adapter, but I used the Ground<--> Ground, and the DATA+ and DATA- (no power needed as your Pentair adapters already are powered and so is my RS-485 adapter.
 3.  To see if you are getting the proper communications from the bus, before you even try to run this program, run from your *nix command line ```od -x < /dev/ttyUSB0```.  Of course, you'll need to change the address of your RS-485 adapter if it isn't the same as mine (here and in the code).
-⋅⋅3a   You'll know you have the wires write when the output of this command looks like (you should see multiple repititions of ffa5ff): 
+
+* 3a   You'll know you have the wires write when the output of this command looks like (you should see multiple repititions of ffa5ff): 
 ```
 0002240 0000 0000 0000 0000 0000 ff00 ffff ffff
 0002260 *ffff 00ff a5ff* 0f0a 0210 161d 000c 0040
@@ -40,7 +41,8 @@ Let me elaborate on #3.  Both the awesome work of Jason Y and Michael were speci
 0002320 0400 0000 597a 0d00 af03 00ff a5ff 100a
 0002340 e722 0001 c901 ffff ffff ffff ffff ff00
 ```
-⋅⋅3b.  This is the WRONG wiring (no ffa5ff present).
+
+* 3b.  This is the WRONG wiring (no ffa5ff present).
 ```
 0001440 0000 0000 0000 0000 0000 0000 0000 6a01
 0001460 e1d6 fbdf d3c5 fff3 ff7f ffff ffff f9ff
@@ -76,8 +78,7 @@ Initial - This version was the first cut at the code
 * Need to still update the web UI for the status of the system and also the REST api for hooks to other HA apps.
 * I'm having trouble with the RS485 cable above, but purchased another one for <$5 from Amazon that is working better.
 
-# Configuration
-1.  Edit the config.json to match your PHYSICAL circuits.  The code will dynamically map the circuits to their virtual counterparts automatically.  You can not get this from the iPhone, iPad (or Android?) apps.  You will need to go to the controller to get the physical mapping or look in the setup section of your ScreenLogic app.  They aren't numbered, either, so just add them in the order you see them.
+
 
 
 # Methodology
@@ -166,8 +167,6 @@ Chatter [16,97,4,1,255,2,26] is acknowledgement to instruction [97,16,4,1,255,2,
 
 # Protocol
 If you read through the below links, you'll quickly learn that the packets can vary their meaning based upon who they are sending the message to, and what they want to say.  It appears the same message can come in 35, 38 or 32 bytes, but of course there will be some differences there.
-
-WRONG --> I already figured out the mysterious 0x02 bit between Source and Length refers to the heat command of the pool circuit.  If this 2 is present, the heat mode is either heater/solar pref/solar only.  If the heat mode is off, this bit is excluded and the packet looks completely different (on the to-do list.)
 
 
 # Credit
