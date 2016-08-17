@@ -3,23 +3,29 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Pentair Pool Equipment Status</title>
+    <title>Pentair Pool System</title>
     <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
-Pentair Pool Equipment Status
-<p>
-    Please wait 60 seconds before connecting... (to be addressed)
+    Pentair Pool System
     <br>
-    If you do not see al your circuits here, for the controller to broadcast the configuration by changing the heat set point (or any configuration stored in the server)
-    </p>
-    
-        <div id="status">Equipment
-        </div>
+    <button id="switchToStatus" class="button">Circuits</button>
+    <button id="switchToConfig" class="button">Config</button>
+
+    <br>
+
+    <div id="status">
+        <br>Circuit Status
+        <p>
+    </div>
+
+    <div id="config" class="config2">
+        Coming soon.
+    </div>
 
 
-    <!--<script src="/jquery-1.10.2.min.js"></script>-->
+
     <script src="https://code.jquery.com/jquery-1.10.2.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <script src="/main.js"></script>

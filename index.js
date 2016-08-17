@@ -3,7 +3,7 @@
     // this function is strict...
 }());
 
-
+console.log('\033[2J'); //clear the console
 
 const serialport = require("serialport");
 var SerialPort = serialport.SerialPort;
@@ -20,17 +20,18 @@ var data2; //variable to hold all serialport.open data; appends to this with eac
 var currentStatus; // persistent object to hold pool equipment status.
 var currentStatusBytes; //persistent variable to hold full bytes of pool status
 var currentWhatsDifferent; //persistent variable to hold what's different
+var currentCircuitArrObj; //persistent variable to hold circuit info
 var instruction = ''; //var to hold potential chatter instructions
 var processingBuffer = 0; //flag to tell us if we are processing the buffer currently
-var counter = 0; //log counter to help match messages with buffer in log
+var msgCounter = 0; //log counter to help match messages with buffer in log
 
 
 //To do: Clean up the following... consolidate or at least make it consistent
 var loglevel = 0; //1=more, 0=less
 var pumpMessages = 0; //variable if we want to output pump messages or not
 var duplicateMessages = 0; //variable if we want to output duplicate broadcast messages
-var showConsoleNotDecoded = 0; //variable to hide any unknown messages
-var showConfigMessages = 0; //variable to show/hide configuration messages
+var showConsoleNotDecoded = 1; //variable to hide any unknown messages
+var showConfigMessages = 1; //variable to show/hide configuration messages
 
 //search placeholders for sockets.io Search
 var searchMode = 'stop'
@@ -40,6 +41,7 @@ var searchAction = '';
 
 
 var customNameArr = [];
+
 
 const state = {
     OFF: 0,
@@ -56,13 +58,17 @@ const strState = {
     1: "On"
 }
 
-// offset from start of packet info
-// this packet definition is only good if heat command on pool is one of Heater/Solar Pref/Solar Only (off is different)
+
+// this first four bytes of ANY packet are the same
 const packetFields = {
     DEST: 0,
     FROM: 1,
     ACTION: 2,
-    DATASIZE: 3,
+    LENGTH: 3,
+
+}
+
+const controllerStatusPacketFields = {
     HOUR: 4,
     MIN: 5,
     EQUIP1: 6,
@@ -76,14 +82,14 @@ const packetFields = {
     HEATER_ACTIVE: 20, //0=off.  32=on.  More here?
     AIR_TEMP: 22,
     SOLAR_TEMP: 23,
-    HEATER_MODE: 26,
+    HEATER_MODE: 26
 }
 
 const pumpPacketFields = {
-    DEST: 0,
-    FROM: 1,
-    ACTION: 2,
-    LENGTH: 3,
+    //DEST: 0,  -- same as packetFields (common)
+    //FROM: 1,
+    //ACTION: 2,
+    //LENGTH: 3,
     CMD: 4, //
     MODE: 5, //?? Mode in pump status. Means something else in pump write/response
     DRIVESTATE: 6, //?? Drivestate in pump status.  Means something else in pump write/response
@@ -99,6 +105,12 @@ const pumpPacketFields = {
     //15, 16 Unknown
     HOUR: 17, //Hours
     MIN: 18 //Mins
+}
+
+const namePacketFields = {
+    NUMBER: 4,
+    CIRCUITFUNCTION: 5,
+    NAME: 6,
 }
 
 const pumpAction = {
@@ -242,12 +254,58 @@ const strCircuitFunction = {
     64: 'Freeze protection on'
 }
 
-/*const strUOM = {
-    //This should be renamed.  Originally, it was only known this byte was C or F.  Later it was discovered to have more data.
-    0: String.fromCharCode(176) + ' Farenheit', //Also, "Auto" on the valves button  0x00000000
-    4: String.fromCharCode(176) + ' Celsius',  //0x00000100
-    //strUOMSTATUS is part of the same bitmask
-}*/
+const strActions = {
+    1: 'Ack Message',
+    2: 'Controller Status',
+    5: 'Date/Time',
+    7: 'Pump Status',
+    8: 'Heat/Temperature Status',
+    10: 'Custom Names',
+    11: 'Circuit Names/Function',
+    16: 'Heat Pump Status?',
+    17: 'Schedule details',
+    19: 'IntelliChem pH',
+    23: 'Pump Status',
+    24: 'Pump Config',
+    25: 'IntelliChlor Status',
+    29: 'Valve Status',
+    34: 'Solar/Heat Pump Status',
+    35: 'Delay Status',
+    39: 'Set ?',
+    40: 'Settings?',
+
+    133: 'Set Date/Time',
+    134: 'Set Circuit',
+    136: 'Set Heat/Temperature',
+    138: 'Set Custom Name',
+    139: 'Set Circuit Name/Function',
+    144: 'Set Heat Pump',
+    147: 'Set IntelliChem',
+    152: 'Set Pump Config',
+    153: 'Set IntelliChlor',
+    157: 'Set Valves',
+    162: 'Set Solar/Heat Pump',
+    163: 'Set Delay',
+
+    197: 'Get Date/Time',
+    200: 'Get Heat/Temperature',
+    202: 'Get Custom Name',
+    203: 'Get Circuit Name/Function',
+    208: 'Get Heat Pump',
+    209: 'Get Schedule',
+    211: 'Get IntelliChem',
+    215: 'Get Pump Status',
+    216: 'Get Pump Config',
+    217: 'Get IntelliChlor',
+    221: 'Get Valves',
+    226: 'Get Solar/Heat Pump',
+    227: 'Get Delays',
+    231: 'Get ?',
+    232: 'Get Settings?',
+
+    252: 'SW Version Info',
+    253: 'Get SW Version',
+}
 
 
 const strRunMode = {
@@ -326,6 +384,43 @@ const fs = require('fs');
 var poolConfig = JSON.parse(fs.readFileSync(configurationFile));
 
 
+
+
+//New Objects to replace arrays
+function circuit(number, numberStr, name, circuitFunction, status, freeze) {
+    this.number = number; //1
+    this.numberStr = numberStr; //circuit1
+    this.name = name; //Pool
+    this.circuitFunction = circuitFunction; //Generic, Light, etc
+    this.status = status; //On, Off
+    this.freeze = freeze; //On, Off
+}
+var circuit1 = new circuit();
+var circuit2 = new circuit();
+var circuit3 = new circuit();
+var circuit4 = new circuit();
+var circuit5 = new circuit();
+var circuit6 = new circuit();
+var circuit7 = new circuit();
+var circuit8 = new circuit();
+var circuit9 = new circuit();
+var circuit10 = new circuit();
+var circuit11 = new circuit();
+var circuit12 = new circuit();
+var circuit13 = new circuit();
+var circuit14 = new circuit();
+var circuit15 = new circuit();
+var circuit16 = new circuit();
+var circuit17 = new circuit();
+var circuit18 = new circuit();
+var circuit19 = new circuit();
+var circuit20 = new circuit();
+
+
+var currentCircuitArrObj = ['blank', circuit1, circuit2, circuit3, circuit4, circuit5, circuit6, circuit7, circuit8, circuit9, circuit10, circuit11, circuit12, circuit13, circuit14, circuit15, circuit16, circuit17, circuit18, circuit19, circuit20];
+
+
+
 //-----array format
 var j = 0;
 var circuitArr = [
@@ -352,11 +447,16 @@ for (var key in poolConfig.Pentair) {
 
 console.log('*******************************')
 console.log('\n Important changes:');
-console.log('\n Configuration is now read from your pool.  In order to force the controller to broadcast the configuration, change the setpoint of your heater (or any configuration that is saved in the controller) and it will rebroadcast the pool configuration.');
-console.log('\n I am working on writing back to the bus and once I can successfully do this I will ask the controller for the config so this step is not necessary.');
+console.log('\n Configuration is now read from your pool.  The application will send the commands to retrieve the custom names and circuit names.');
+console.log('\n It may take up to a minute for the UI in the below URL to properly show.  Please be patient');
 console.log('\n Visit http://_your_machine_name_:3000 to see a basic UI');
 console.log('\n Visit http://_your_machine_name_:3000/debug.html for a way to listen for specific messages\n\n');
 console.log('*******************************')
+
+
+var queuePacketsArr = []; //array to hold messages to send
+
+
 
 //return a given equipment name given the circuit # 0-16++
 function circuitArrStr(equip) {
@@ -397,24 +497,13 @@ if (loglevel) {
 
 
 
-
-
 sp.on('open', function () {
     console.log('open');
-    /*var largeMessage = [00, 255, 165, 16, 34, 134, 2, 9, 1, 1, 115];
-    console.log('Calling write');
-    sp.write(largeMessage, function () {
-        console.log('Write callback returned');
-        // At this point, data may still be buffered and not sent out over the port yet
-        // write function returns asynchronously even on the system level.
-        console.log('Calling drain');
-        sp.drain(function () {
-            console.log('Drain callback returned');
-            // Now the data has "left the pipe" (tcdrain[1]/FlushFileBuffers[2] finished blocking).
-            // [1] http://linux.die.net/man/3/tcdrain
-            // [2] http://msdn.microsoft.com/en-us/library/windows/desktop/aa364439(v=vs.85).aportx
-        });
-    });*/
+    if (loglevel) console.log('Queueing messages to retrieve Custome Names and Circuit Names');
+
+    getConfiguration();
+    if (loglevel) console.log('Done queueing messages to retrieve Custom Names and Circuit Names')
+
     sp.on('data', function (data) {
 
 
@@ -433,10 +522,10 @@ sp.on('open', function () {
 
 
         //start to parse message at 250 bytes.  Is there a better time or way to know when the buffer has a full message or to start processing?
-        if (currBufferLen > 50 && !processingBuffer) {
+        if (currBufferLen > 10 && !processingBuffer) {
 
-            //Data is being pushed to the buffer from the serial port faster than we are processing it.  Maybe just dump some data at some point?  But we would read >250 characters before this part of the code would finish so it was being called multiple times on the same (ever increasing) data2 buffer.  This flag should at least only let us process one part at a time.
-            processingBuffer = 1;
+            //do we still need this?
+            //processingBuffer = 1;
 
 
             var chatter; //a {potential} message we have found on the bus
@@ -459,7 +548,7 @@ sp.on('open', function () {
 
 
                                 //if we don't have the length bit in the buffer or the length of the message is less than the remaining buffer bytes
-                                fulllogger.log('silly', 'Msg#  %s   BUFFER IN MSG CHECK:  data2.len %s, chatterlen %s, i %s: TOTAL: %s True? %s ', counter, data2.length, chatterlen, i, data2.length - i - 1 - chatterlen, (data2.length - i - 2 - chatterlen) <= 0)
+                                fulllogger.log('silly', 'Msg#  n/a   BUFFER IN MSG CHECK:  data2.len %s, chatterlen %s, i %s: TOTAL: %s True? %s ', data2.length, chatterlen, i, data2.length - i - 1 - chatterlen, (data2.length - i - 2 - chatterlen) <= 0)
 
 
 
@@ -467,20 +556,20 @@ sp.on('open', function () {
 
                                 if (chatterlen == undefined || (data2.length - i - 2 - chatterlen) <= 0) {
                                     //reset the buffer starting with the current partial message
-                                    fulllogger.debug('Msg#  %s   Incomplete message at end of buffer.  Prepending message to empty buffer string.');
+                                    fulllogger.debug('Msg#  n/a   Incomplete message at end of buffer.  Prepending message to empty buffer string.');
                                     brokeBufferLoop = true;
 
                                     data2 = data2.slice(i - 2)
                                     break loop1;
                                 }
 
-                                counter += 1;
-                                fulllogger.info('Msg# %s   Full buffer where message found: %s', counter, b.data.toString())
+                                msgCounter += 1;
+                                //fulllogger.info('Msg# %s   Full buffer where message found: %s', msgCounter, b.data.toString())
 
                                 i += 3; //jump ahead to start of payload
 
 
-                                fulllogger.silly('Msg#  %s   Length should be: %s  at position: %s ', counter, chatterlen, i)
+                                fulllogger.silly('Msg#  %s   Length should be: %s  at position: %s ', msgCounter, chatterlen, i)
 
 
                                 //iterate through the JSON array to pull out a valid message
@@ -497,15 +586,15 @@ sp.on('open', function () {
                                         chatter[j] = b.data[i + j];
 
                                         if (j == chatterlen - 1) {
-                                            fulllogger.silly('Msg# %s   Extracting chatter from buffer: (length of chatter %s, position in buffer %s, start position of chatter in buffer %s) %s', counter, chatterlen, i, j, output)
+                                            fulllogger.silly('Msg# %s   Extracting chatter from buffer: (length of chatter %s, position in buffer %s, start position of chatter in buffer %s) %s', msgCounter, chatterlen, i, j, output)
 
                                             //This may be unnecessary; fixed code so we should get correct messages but will leave it for now
                                             if (chatter[j] == undefined || chatter[j - 1] == undefined || chatter[j - 1] == undefined) {
-                                                fulllogger.warn('Msg# %s   Chatter length MISMATCH.  len %s, i %s currBufferLen %s', counter, chatterlen, i, currBufferLen)
+                                                fulllogger.warn('Msg# %s   Chatter length MISMATCH.  len %s, i %s currBufferLen %s', msgCounter, chatterlen, i, currBufferLen)
                                             }
 
-
-                                            checksum(chatter, decode, counter);
+                                            if (loglevel == 1) console.log('Msg# %s Calling checksum: %s %s', msgCounter, chatter, msgCounter);
+                                            checksum(chatter, msgCounter);
                                             //skip ahead in the buffer for loop to the end of this message. 
                                             i += chatterlen;
                                             break loop1;
@@ -517,47 +606,47 @@ sp.on('open', function () {
 
 
                             }
-                            //this isn't working <-- CHECK
-                            else if (b.data[i + 8] == 6) {
-                                var str;
+                            /* //this isn't working <-- CHECK
+                             else if (b.data[i + 8] == 6) {
+                                 var str;
 
-                                console.log('------->FOUND SOMETHING???')
-                                console.log('data: ', JSON.stringify(b.data))
-                                i += 3;
-                                chatterlen = 8;
-                                for (j = 0; j < chatterlen; j++) {
-                                    if (j == 0) {
-                                        var output = "     Found SOMETHING chatter (text): " //for logging, remove later
-                                        chatter = new Array(chatterlen);
-                                    }
+                                 console.log('------->FOUND SOMETHING???')
+                                 console.log('data: ', JSON.stringify(b.data))
+                                 i += 3;
+                                 chatterlen = 8;
+                                 for (j = 0; j < chatterlen; j++) {
+                                     if (j == 0) {
+                                         var output = "     Found SOMETHING chatter (text): " //for logging, remove later
+                                         chatter = new Array(chatterlen);
+                                     }
 
-                                    output += b.data[i + j];
-                                    output += " ";
-                                    console.log('SOMETHING in chatter: (len %s, i %s, j %s) %s', chatterlen, i, j, output)
-                                    chatter[j] = b.data[i + j];
+                                     output += b.data[i + j];
+                                     output += " ";
+                                     console.log('SOMETHING in chatter: (len %s, i %s, j %s) %s', chatterlen, i, j, output)
+                                     chatter[j] = b.data[i + j];
 
-                                    if (j == chatterlen - 1) {
+                                     if (j == chatterlen - 1) {
 
-                                        if (chatter[j] == undefined || chatter[j - 1] == undefined || chatter[j - 1] == undefined) {
-                                            console.log('Chatter SOMETHING length MISMATCH.  len %s, i %s currBufferLen %s', chatterlen, i, currBufferLen)
-                                        }
-
-
-                                        //console.log(output + '\n');
-                                        //console.log('processingBuffer:' + processingBuffer)
-                                        //console.log('OR HERE????:' + chatter.toString())
-                                        //logger.log('info', chatter.toString())
-                                        checksum(chatter, decode);
-                                        //skip ahead in the buffer for loop to the end of this message. 
-                                        i += chatterlen;
-                                        console.log('<-----FOUND SOMETHING???')
-                                        break loop1;
-                                    }
+                                         if (chatter[j] == undefined || chatter[j - 1] == undefined || chatter[j - 1] == undefined) {
+                                             console.log('Chatter SOMETHING length MISMATCH.  len %s, i %s currBufferLen %s', chatterlen, i, currBufferLen)
+                                         }
 
 
-                                }
+                                         //console.log(output + '\n');
+                                         //console.log('processingBuffer:' + processingBuffer)
+                                         //console.log('OR HERE????:' + chatter.toString())
+                                         //logger.log('info', chatter.toString())
+                                         checksum(chatter);
+                                         //skip ahead in the buffer for loop to the end of this message. 
+                                         i += chatterlen;
+                                         console.log('<-----FOUND SOMETHING???')
+                                         break loop1;
+                                     }
 
-                            }
+
+                                 }
+
+                             }*/
 
                         }
 
@@ -584,9 +673,10 @@ sp.on('open', function () {
 
 
 //Validate the checksum on the chatter
-function checksum(chatterdata, callback, counter) {
+function checksum(chatterdata, counter) {
+
     //make a copy so when we callback the decode method it isn't changing our log output in Winston
-    fulllogger.silly("Msg# %s   Checking checksum on chatter: ", chatterdata);
+    if (loglevel == 1)("Msg# %s   Checking checksum on chatter: ", chatterdata);
     var chatterCopy = chatterdata.slice(0);
     var len = chatterCopy.length;
 
@@ -603,6 +693,11 @@ function checksum(chatterdata, callback, counter) {
     if (!validChatter) {
         fulllogger.warn('Msg# %s   Mismatch on checksum:   %s!=%s   %s', counter, chatterdatachecksum, databytes, chatterCopy)
         console.log('Msg# %s   Mismatch on checksum:    %s!=%s   %s', counter, chatterdatachecksum, databytes, chatterCopy)
+
+        //if a mismatch, rewrite the packet in case it was from us.
+        if (queuePacketsArr.length > 0) {
+            writePacket();
+        }
     } else {
         logger.info('Msg# %s   Match on Checksum:    %s==%s   %s', counter, chatterdatachecksum, databytes, chatterCopy)
     }
@@ -614,7 +709,13 @@ function checksum(chatterdata, callback, counter) {
     //console.log("NewCD: ", newcd);
     fulllogger.silly("Msg# %s   Chatterdata splice: %s --> %s ", counter, chatterdata, chatterCopy)
         //call new function to process message; if it isn't valid, we noted above so just don't continue
-    if (validChatter) callback(chatterCopy, counter);
+    if (validChatter) {
+        if (queuePacketsArr.length > 0) {
+            isResponse(chatterCopy, counter)
+        } else {
+            decode(chatterCopy, counter)
+        }
+    }
 };
 
 function dec2bin(dec) {
@@ -681,7 +782,15 @@ function pad(num, size) {
     return s.substr(s.length - size);
 }
 
-function decode(data, counter) {
+
+
+
+
+
+
+
+
+function decode(data, counter, responseBool) {
     var decoded = false;
 
     //when searchMode (from socket.io) is in 'start' status, any matching packets will be set to the browser at http://machine.ip:3000/debug.html
@@ -699,250 +808,432 @@ function decode(data, counter) {
     //uncomment the below line if you think the 'parser' is missing any messages.  It will output every message sent here.
     //console.log('Msg# %s is %s', counter, JSON.stringify(data));  
 
-    //this payload is good if heat command on pool is one of Heater/Solar Pref/Solar Only
-    if (data[packetFields.FROM] == ctrl.MAIN && data[packetFields.DEST] == ctrl.BROADCAST) {
-        if (data.length == 35) //if (data[packetFields.ACTIOn] == 2) 
-        {
-
-            //status will be our return object
-            var status = {};
-
-            //time returned in HH:MM (24 hour)  <-- need to clean this up so we don't get times like 5:3
-            status.time = data[packetFields.HOUR] + ':' + data[packetFields.MIN];
-            status.waterTemp = data[packetFields.WATER_TEMP];
-            status.temp2 = data[packetFields.TEMP_2];
-            status.airTemp = data[packetFields.AIR_TEMP];
-            status.solarTemp = data[packetFields.SOLAR_TEMP];
-            status.poolHeatMode = heatMode[data[packetFields.UNKNOWN] & 3]; //mask the data[6] with 0011
-            status.spaHeatMode = heatMode[(data[packetFields.UNKNOWN] & 12) >> 2]; //mask the data[6] with 1100 and shift right two places
-
-            status.poolHeatMode2 = heatMode[data[packetFields.HEATER_MODE] & 3]; //mask the data[6] with 0011
-            status.spaHeatMode2 = heatMode[(data[packetFields.HEATER_MODE] & 12) >> 2]; //mask the data[6] with 1100 and shift right two places
-
-            status.valves = strValves[data[packetFields.VALVES]];
-            status.runmode = strRunMode[data[packetFields.UOM] & 129]; // more here?
-            status.UOM = String.fromCharCode(176) + ((data[packetFields.UOM] & 4) >> 3) ? ' Farenheit' : ' Celsius';
-            if (data[packetFields.HEATER_ACTIVE] == 0) {
-                status.HEATER_ACTIVE = 'Off'
-            } else
-            if (data[packetFields.HEATER_ACTIVE] == 32) {
-                status.HEATER_ACTIVE = 'Heater On'
-            } else {
-                status.HEATER_ACTIVE = 'Unknown'
-            };
 
 
-            //Loop through the three bits that start at 3rd (and 4th/5th) bit in the data payload
-            for (var i = 0; i < circuitArr.length; i++) {
-                //loop through all physical circuits within each of the bits
-                for (j = 0; j < circuitArr[i].length; j++) {
-                    var tempFeature = circuitArr[i][j]; //name of circuit
-                    equip = data[packetFields.EQUIP1 + i]
-                    status[tempFeature] = (equip & (1 << (j))) >> j ? "on" : "off"
-                }
-            }
+    //I believe this should be any packet with 165,10.  Need to verify.
+    if ((data[packetFields.DEST] == ctrl.BROADCAST) || (data[packetFields.DEST] == ctrl.MAIN) || (data[packetFields.DEST] == ctrl.WIRELESS) || (data[packetFields.DEST] == ctrl.REMOTE)) {
+        switch (data[packetFields.ACTION]) {
 
-            //Initialize static variable (currentStatus) if not defined, and log it.
-            if (currentStatus == null || currentStatus == undefined) {
-                currentStatus = clone(status);
-                currentStatusBytes = data.slice(0);
-                console.log('-->EQUIPMENT Msg# %s   \n Equipment Status: %O', counter, status)
-                logger.info('Msg# %s   Discovered initial pool settings: %s', counter, JSON.stringify(currentStatus))
-                console.log(printStatus(data));
-                console.log('\n <-- EQUIPMENT \n');
-                decoded = true;
-            } else {
+        case 2: //Controller Status 
+            {
 
-                //Check if we have the same data
-                //This should also significantly limit the amount of duplicate broadcast/chatter.  At a minimum, the packet should be different every minute (due to time).  If it is more than that, we need to explore further.
+                //status will be our return object
+                var status = {};
+
+                //time returned in HH:MM (24 hour)  <-- need to clean this up so we don't get times like 5:3
+                status.time = data[controllerStatusPacketFields.HOUR] + ':' + data[controllerStatusPacketFields.MIN];
+                status.waterTemp = data[controllerStatusPacketFields.WATER_TEMP];
+                status.temp2 = data[controllerStatusPacketFields.TEMP_2];
+                status.airTemp = data[controllerStatusPacketFields.AIR_TEMP];
+                status.solarTemp = data[controllerStatusPacketFields.SOLAR_TEMP];
+                status.poolHeatMode = heatMode[data[controllerStatusPacketFields.UNKNOWN] & 3]; //mask the data[6] with 0011
+                status.spaHeatMode = heatMode[(data[controllerStatusPacketFields.UNKNOWN] & 12) >> 2]; //mask the data[6] with 1100 and shift right two places
+
+                status.poolHeatMode2 = heatMode[data[controllerStatusPacketFields.HEATER_MODE] & 3]; //mask the data[6] with 0011
+                status.spaHeatMode2 = heatMode[(data[controllerStatusPacketFields.HEATER_MODE] & 12) >> 2]; //mask the data[6] with 1100 and shift right two places
+
+                status.valves = strValves[data[controllerStatusPacketFields.VALVES]];
+                status.runmode = strRunMode[data[controllerStatusPacketFields.UOM] & 129]; // more here?
+                status.UOM = String.fromCharCode(176) + ((data[controllerStatusPacketFields.UOM] & 4) >> 3) ? ' Farenheit' : ' Celsius';
+                if (data[controllerStatusPacketFields.HEATER_ACTIVE] == 0) {
+                    status.HEATER_ACTIVE = 'Off'
+                } else
+                if (data[controllerStatusPacketFields.HEATER_ACTIVE] == 32) {
+                    status.HEATER_ACTIVE = 'Heater On'
+                } else {
+                    status.HEATER_ACTIVE = 'Unknown'
+                };
 
 
 
-                if (!status.equals(currentStatus)) {
-                    //we are only checking our KNOWN objects.  There may be other differences and we'll recode for that shortly.
 
 
-                    console.log('-->EQUIPMENT Msg# %s   \n Equipment Status: ', counter, currentStatus)
-                    currentWhatsDifferent = currentStatus.whatsDifferent(status);
-                    console.log('Msg# %s   What\'s Different?: %s', counter, currentWhatsDifferent)
-                    console.log(printStatus(currentStatusBytes, data));
-                    console.log('\n <-- EQUIPMENT \n');
-
-
+                //Initialize static variable (currentStatus) if not defined, and log it.
+                if (currentStatus == null || currentStatus == undefined) {
                     currentStatus = clone(status);
                     currentStatusBytes = data.slice(0);
-                    decoded = true;
+                    console.log('-->INITIAL EQUIPMENT Msg# %s   \n', counter)
+                    logger.info('Msg# %s   Discovered initial pool settings: %s', counter, JSON.stringify(currentStatus))
+                    console.log(printStatus(data));
+                    //console.log(circuitArrObj)
+
+
+
+
+                    //Loop through the three bits that start at 3rd (and 4th/5th) bit in the data payload
+                    for (var i = 0; i < circuitArr.length; i++) {
+                        //loop through all physical circuits within each of the bits
+                        for (j = 0; j < circuitArr[i].length; j++) {
+                            var tempFeature = circuitArr[i][j]; //name of circuit
+                            equip = data[controllerStatusPacketFields.EQUIP1 + i]
+                            currentCircuitArrObj[j + (i * 8) + 1].status = (equip & (1 << (j))) >> j ? "on" : "off"
+                        }
+
+
+
+                    }
+                    console.log('Initial circuits: %s', JSON.stringify(currentCircuitArrObj))
+                    console.log('\n <-- EQUIPMENT \n');
                     io.sockets.emit('status',
-                        currentStatus
+                        currentCircuitArrObj
                     )
 
+
+
                 } else {
-                    //let's see if it is the exact same packet or if there are variations in the data we have not interpreted yet
+
+                    //Check if we have the same data
+                    /*console.log('\n*******EQUIPMENT STATUS !status.equals(currentStatus): %s', !status.equals(currentStatus))
+                    console.log('status: %s', JSON.stringify(status))
+                    console.log('currentStatus: %s', JSON.stringify(currentStatus))
+                    console.log('*******\n')*/
+
+                    //if (!status.equals(currentStatus)) {
+
                     if (!data.equals(currentStatusBytes)) {
-                        console.log('-->Variation in unknown status bytes Msg# ', counter)
+
+                        //console.log('EQUIPMENT STATUS UNEQUAL')
+
+
+                        //we are only checking our KNOWN objects.  There may be other differences and we'll recode for that shortly.
+                        //Loop through the three bits that start at 3rd (and 4th/5th) bit in the data payload
+
+
+
+
+                        //the following is a shortcut for reassiging the whole array.  It will be overwritten below.  
+                        //var circuitArrObj = JSON.parse(JSON.stringify(circuitArrObj));
+
+                        var circuitArrObj = ['blank', circuit1, circuit2, circuit3, circuit4, circuit5, circuit6, circuit7, circuit8, circuit9, circuit10, circuit11, circuit12, circuit13, circuit14, circuit15, circuit16, circuit17, circuit18, circuit19, circuit20];
+
+
+                        for (var i = 0; i < circuitArr.length; i++) {
+                            //loop through all physical circuits within each of the bits
+                            for (j = 0; j < circuitArr[i].length; j++) {
+                                var tempFeature = circuitArr[i][j]; //name of circuit
+                                equip = data[controllerStatusPacketFields.EQUIP1 + i]
+
+                                //status[tempFeature] = (equip & (1 << (j))) >> j ? "on" : "off"
+
+                                //debug messages
+                                //console.log('length circuitarr.len: %s   circuitarr[i].len: %s   \n  circuitArr: %s', circuitArr.length, circuitArr[i].length, circuitArr.join('],\n['))
+                                //console.log('status[%s][%s] = ', i,j, status[tempFeature])
+                                //console.log('update status on CircuitArrObj[%s](%s) to %s',j + (i * 8) + 1,circuitArrObj[j + (i * 8) + 1].name,(equip & (1 << (j))) >> j ? "on" : "off")
+
+
+                                circuitArrObj[j + (i * 8) + 1].status = (equip & (1 << (j))) >> j ? "on" : "off"
+                            }
+                        }
+
+
+                        console.log('-->EQUIPMENT Msg# %s   \n', counter)
+                        currentWhatsDifferent = currentStatus.whatsDifferent(status);
+                        console.log('Msg# %s   What\'s Different System Status?: %s', counter, currentWhatsDifferent)
+                        console.log('Msg# %s   What\'s Different with Circuits? (Need to fix): %s', counter, currentCircuitArrObj.whatsDifferent(circuitArrObj))
+
+
+
                         console.log(printStatus(currentStatusBytes, data));
-                        console.log('<--Variation \n')
+                        //console.log(circuitArrObj);
+                        console.log('<-- EQUIPMENT \n');
+
+
+                        currentStatus = clone(status);
                         currentStatusBytes = data.slice(0);
+                        currentCircuitArrObj = JSON.parse(JSON.stringify(circuitArrObj));
                         decoded = true;
+                        io.sockets.emit('status',
+                            currentCircuitArrObj
+                        )
+
                     } else {
+
+
                         if (duplicateMessages) console.log('Msg# %s   Duplicate broadcast.', counter)
                         decoded = true;
+
+
                     }
 
                 }
 
+
+                decoded = true;
+                break;
             }
 
 
-            // if the time field is whacked, don't send any data.  <-- leftover code.  can probable eliminate
-            d = status.time.split(":");
-            if (parseInt(d[0]) < 24 && parseInt(d[1]) < 60) {
-                if (loglevel) console.log('-->EQUIPMENT Msg# ', counter, '\n Equipment Status verbose: ', JSON.stringify(status), '\n', parseChatter(data), '\n <-- EQUIPMENT \n');
-            }
-        } else if (data[packetFields.ACTION] == 5) {
 
-        } else
-
-        if (data[packetFields.ACTION] == 10) // Get Custom Names
-        {
-            var customName = '';
-            for (var i = 5; i < 16; i++) {
-                if (data[i] > 0 && data[i] < 251) //251 is used to terminate the custom name string if shorter than 11 digits
-                {
-                    //console.log('i: %s and data[i]: %s',i, data[i])
-                    customName += String.fromCharCode(data[i])
-                };
-            }
-            if (showConfigMessages) {
-                console.log('Msg# %s  Custom Circuit Name Raw:  %s', counter, JSON.stringify(data))
-                console.log('Msg# %s  Custom Circuit Name Decoded: "%s"', counter, customName)
-            }
-            //push method works because the names are output in orde.
-
-            customNameArr[data[4]] = customName;
-
-            if (data[4] == 9) {
-                console.log('\nCustom Circuit Names retrieved from configuration: \n [%s]\n ', customNameArr)
-            }
-
-
-            //parseInt(n,16).toString(2)
-
-        } else
-
-        if (data[packetFields.ACTION] == 11) // Get Circuit Names
-        {
-
-
-            var whichCircuit = 0;
-            if (data[4] < 8) {
-                whichCircuit = 0; //8 bits for first mode byte
-            } else if (data[4] >= 8 && data[4] < 16) {
-                (whichCircuit = 1) //8 bits for 2nd mode byte
-            } else(whichCircuit = 2); //8 bits for 3rd mode byte
-
-            var freezeProtection;
-            if ((data[5] & 64) == 64) {
-                freezeProtection = 'On'
-            } else {
-                freezeProtection = 'OFF'
-            }
-            //The &63 masks to 00111111 because 01000000 is freeze protection bit
-            if (showConfigMessages) {
-                console.log('Msg# %s  Circuit Info  %s', counter, JSON.stringify(data))
-                console.log('Msg# %s  CIRCUIT NUMBER: %s  CIRCUIT NAME: %s(%s)  CIRCUIT FUNCTION: %s(%s, %s)  FREEZE PROTECTION: %s(masked:%s)', counter, data[4], strCircuitName[data[6]], data[6], strCircuitFunction[data[5] & 63], data[5], data[5] & 63, freezeProtection, data[5] & 64)
-            }
-
-
-            //if the ID of the circuit name is 1-101 then it is a standard name.  If it is 200-209 it is a custom name.  The mapping between the string value in the getCircuitNames and getCustomNames is 200.  So subtract 200 from the circuit name to get the id in the custom name array.
-            //data[4]-1 because this array starts at 1 and JS arrays start at 0.
-            //-(8*whichCircuit) because this will subtract 0, 8 or 16 from the index so each secondary index will start at 0
-
-
-            if (data[6] < 200) {
-                circuitArr[whichCircuit][data[4] - (8 * whichCircuit) - 1] = strCircuitName[data[6]];
-            } else {
-                if (showConfigMessages) console.log('mapping %s to %s', strCircuitName[data[6]], customNameArr[data[6] - 200]);
-                circuitArr[whichCircuit][data[4] - (8 * whichCircuit) - 1] = customNameArr[data[6] - 200];
-            }
-            if (showConfigMessages) console.log('indexof: %s %s', strCircuitName[data[6]], circuitArr.indexOf(strCircuitName[data[6]]))
-            if (data[4] == 18) console.log('Circuit Array Discovered from configuration: \n[[%s]]\n', circuitArr.join('],\n['))
-
-        } else
-
-        if (data[packetFields.ACTION] == 17) // Get Schedules
-        {
-            var schedule = {};
-            schedule.ID = data[4];
-
-
-            var whichCircuit = 0;
-            if (data[5] < 8) {
-                whichCircuit = 0; //8 bits for first mode byte
-            } else if (data[5] >= 8 && data[5] < 16) {
-                (whichCircuit = 1) //8 bits for 2nd mode byte
-            } else(whichCircuit = 2); //8 bits for 3rd mode byte
-            schedule.CIRCUIT = circuitArr[whichCircuit][data[5] - (8 * whichCircuit) - 1];
-
-            if (data[6] == 25) //25 = Egg Timer 
+        case 10: //Get Custom Names
             {
-                schedule.MODE = 'Egg Timer'
-                schedule.DURATION = data[8] + ':' + data[9];
-            } else {
-                schedule.MODE = 'Schedule'
-                schedule.DURATION = 'n/a'
-                schedule.START_TIME = data[6] + ':' + data[7];
-                schedule.END_TIME = data[8] + ':' + data[9];
+                //console.log('CUSTOM NAME')
+
+                var customName = '';
+                for (var i = 5; i < 16; i++) {
+                    if (data[i] > 0 && data[i] < 251) //251 is used to terminate the custom name string if shorter than 11 digits
+                    {
+                        //console.log('i: %s and data[i]: %s',i, data[i])
+                        customName += String.fromCharCode(data[i])
+                    };
+                }
+
+                if (loglevel == 1) console.log('Msg# %s  Custom Circuit Name Raw:  %s  & Decoded: %s', counter, JSON.stringify(data), customName)
+                if (showConfigMessages) {
+
+                    console.log('Msg# %s  Custom Circuit Name Decoded: "%s"', counter, customName)
+                }
+                //push method works because the names are output in orde.
+
+                customNameArr[data[4]] = customName;
+
+                //display custom names when we reach the last circuit
+                if (data[4] == 9) {
+                    console.log('\nCustom Circuit Names retrieved from configuration: \n [%s]\n ', customNameArr)
+                }
+                if (loglevel == 1) console.log(customNameArr)
+
+                //parseInt(n,16).toString(2)
+                io.sockets.emit('status',
+                    currentCircuitArrObj
+                )
+                decoded = true;
+                break;
             }
 
-            schedule.DAYS = '';
+        case 11: // Get Circuit Names
+            {
 
-            if (data[10] == 255) {
-                schedule.DAYS += 'EVERY DAY'
-            } else { //0 = none
-                if ((data[10] & 129) == 129) schedule.DAYS += 'Sunday '; //129
-                if ((data[10] & 2) >> 1 == 1) schedule.DAYS += 'Monday '; // 2?
-                if ((data[10] & 4) >> 2 == 1) schedule.DAYS += 'Tuesday '; // 4
-                if ((data[10] & 8) >> 3 == 1) schedule.DAYS += 'Wednesday '; //8
-                if ((data[10] & 16) >> 4 == 1) schedule.DAYS += 'Thursday '; //16
-                if ((data[10] & 32) >> 5 == 1) schedule.DAYS += 'Friday '; //32
-                if ((data[10] & 64) >> 6 == 1) schedule.DAYS += 'Saturday '; //64
+
+                var whichCircuit = 0;
+                if (data[namePacketFields.NUMBER] <= 8) {
+                    whichCircuit = 0; //8 bits for first mode byte
+                } else if (data[namePacketFields.NUMBER] > 8 && data[namePacketFields.NUMBER] <= 16) {
+                    (whichCircuit = 1) //8 bits for 2nd mode byte
+                } else(whichCircuit = 2); //8 bits for 3rd mode byte
+
+                var freezeProtection;
+                if ((data[namePacketFields.CIRCUITFUNCTION] & 64) == 64) {
+                    freezeProtection = 'on'
+                } else {
+                    freezeProtection = 'off'
+                }
+                //The &63 masks to 00111111 because 01000000 is freeze protection bit
+                if (showConfigMessages) {
+                    fulllogger.silly('Msg# %s  Circuit Info  %s', counter, JSON.stringify(data))
+
+                    //if (showConfigMessages == 1) console.log('Msg# %s  Schedule Discovered.  CIRCUIT NUMBER: %s  CIRCUIT NAME: %s(%s)  CIRCUIT FUNCTION: %s(%s, %s)  FREEZE PROTECTION: %s(masked:%s)', counter, data[namePacketFields.NUMBER], strCircuitName[data[namePacketFields.NAME]], data[namePacketFields.NAME], strCircuitFunction[data[namePacketFields.CIRCUITFUNCTION] & 63], data[namePacketFields.CIRCUITFUNCTION], data[namePacketFields.CIRCUITFUNCTION] & 63, freezeProtection, data[namePacketFields.CIRCUITFUNCTION] & 64)
+
+
+                    if (showConfigMessages == 1) console.log('Msg# %s  Schedule %s:  Circuit Name: %s  Function: %s  Freeze Protection: %s', counter, data[namePacketFields.NUMBER], strCircuitName[data[namePacketFields.NAME]], strCircuitFunction[data[namePacketFields.CIRCUITFUNCTION] & 63], freezeProtection)
+                }
+
+
+                //if the ID of the circuit name is 1-101 then it is a standard name.  If it is 200-209 it is a custom name.  The mapping between the string value in the getCircuitNames and getCustomNames is 200.  So subtract 200 from the circuit name to get the id in the custom name array.
+                //data[4]-1 because this array starts at 1 and JS arrays start at 0.
+                //-(8*whichCircuit) because this will subtract 0, 8 or 16 from the index so each secondary index will start at 0
+
+                //array
+                if (data[namePacketFields.NAME] < 200) {
+                    circuitArr[whichCircuit][data[namePacketFields.NUMBER] - (8 * whichCircuit) - 1] = strCircuitName[data[namePacketFields.NAME]];
+                } else {
+                    if (showConfigMessages) console.log('mapping %s to %s', strCircuitName[data[namePacketFields.NAME]], customNameArr[data[namePacketFields.NAME] - 200]);
+                    circuitArr[whichCircuit][data[namePacketFields.NUMBER] - (8 * whichCircuit) - 1] = customNameArr[data[namePacketFields.NAME] - 200];
+                }
+
+                if (loglevel) console.log('circuit name for %s: %s', data[namePacketFields.NUMBER], strCircuitName[data[namePacketFields.NAME]])
+
+                //arrayObj
+                if (data[namePacketFields.NUMBER] != null) { //|| data[namePacketFields.NUMBER] != undefined) {
+                    if (data[namePacketFields.NAME] < 200) {
+                        currentCircuitArrObj[data[namePacketFields.NUMBER]].name = strCircuitName[data[namePacketFields.NAME]]
+                    } else {
+                        currentCircuitArrObj[data[namePacketFields.NUMBER]].name = customNameArr[data[namePacketFields.NAME] - 200];
+                    }
+                    currentCircuitArrObj[data[namePacketFields.NUMBER]].number = data[namePacketFields.NUMBER];
+                    currentCircuitArrObj[data[namePacketFields.NUMBER]].numberStr = 'circuit' + data[namePacketFields.NUMBER];
+                    currentCircuitArrObj[data[namePacketFields.NUMBER]].circuitFunction = strCircuitFunction[data[namePacketFields.CIRCUITFUNCTION] & 63];
+                    currentCircuitArrObj[data[namePacketFields.NUMBER]].freeze = freezeProtection;
+                }
+
+                if (loglevel == 1) console.log('currentCircuitArrObj[%s]: %s ', data[namePacketFields.NUMBER], JSON.stringify(currentCircuitArrObj[data[namePacketFields.NUMBER]]))
+
+
+
+
+                if (data[namePacketFields.NUMBER] == 20) console.log('Circuit Array Discovered from configuration: \n[[%s]]\n', circuitArr.join('],\n['))
+
+                io.sockets.emit('status',
+                    currentCircuitArrObj
+                )
+
+                decoded = true;
+                break;
             }
 
+        case 17: // Get Schedules
+            {
+                var schedule = {};
+                schedule.ID = data[4];
 
 
-            if (showConfigMessages) console.log('\nMsg# %s  Schedule  %s', counter, JSON.stringify(data))
-            if (schedule.MODE == 'Egg Timer') {
-                console.log('Msg# %s  Schedule: ID:%s  CIRCUIT:(%s)%s  MODE:%s  DURATION:%s  ', counter, schedule.ID, data[5], schedule.CIRCUIT, schedule.MODE, schedule.DURATION)
-            } else {
-                console.log('Msg# %s  Schedule: ID:%s  CIRCUIT:(%s)%s  MODE:%s  START_TIME:%s  END_TIME:%s  DAYS:(%s)%s', counter, schedule.ID, data[5], schedule.CIRCUIT, schedule.MODE, schedule.START_TIME, schedule.END_TIME, data[10], schedule.DAYS)
+                var whichCircuit = 0;
+                if (data[5] < 8) {
+                    whichCircuit = 0; //8 bits for first mode byte
+                } else if (data[5] >= 8 && data[5] < 16) {
+                    (whichCircuit = 1) //8 bits for 2nd mode byte
+                } else(whichCircuit = 2); //8 bits for 3rd mode byte
+                schedule.CIRCUIT = circuitArr[whichCircuit][data[5] - (8 * whichCircuit) - 1];
+
+                if (data[6] == 25) //25 = Egg Timer 
+                {
+                    schedule.MODE = 'Egg Timer'
+                    schedule.DURATION = data[8] + ':' + data[9];
+                } else {
+                    schedule.MODE = 'Schedule'
+                    schedule.DURATION = 'n/a'
+                    schedule.START_TIME = data[6] + ':' + data[7];
+                    schedule.END_TIME = data[8] + ':' + data[9];
+                }
+
+                schedule.DAYS = '';
+
+                if (data[10] == 255) {
+                    schedule.DAYS += 'EVERY DAY'
+                } else { //0 = none
+                    if ((data[10] & 129) == 129) schedule.DAYS += 'Sunday '; //129
+                    if ((data[10] & 2) >> 1 == 1) schedule.DAYS += 'Monday '; // 2?
+                    if ((data[10] & 4) >> 2 == 1) schedule.DAYS += 'Tuesday '; // 4
+                    if ((data[10] & 8) >> 3 == 1) schedule.DAYS += 'Wednesday '; //8
+                    if ((data[10] & 16) >> 4 == 1) schedule.DAYS += 'Thursday '; //16
+                    if ((data[10] & 32) >> 5 == 1) schedule.DAYS += 'Friday '; //32
+                    if ((data[10] & 64) >> 6 == 1) schedule.DAYS += 'Saturday '; //64
+                }
+
+
+
+                if (showConfigMessages) console.log('\nMsg# %s  Schedule  %s', counter, JSON.stringify(data))
+                if (schedule.MODE == 'Egg Timer') {
+                    console.log('Msg# %s  Schedule: ID:%s  CIRCUIT:(%s)%s  MODE:%s  DURATION:%s  ', counter, schedule.ID, data[5], schedule.CIRCUIT, schedule.MODE, schedule.DURATION)
+                } else {
+                    console.log('Msg# %s  Schedule: ID:%s  CIRCUIT:(%s)%s  MODE:%s  START_TIME:%s  END_TIME:%s  DAYS:(%s)%s', counter, schedule.ID, data[5], schedule.CIRCUIT, schedule.MODE, schedule.START_TIME, schedule.END_TIME, data[10], schedule.DAYS)
+                }
+                decoded = true;
+                break;
+            }
+            //Set Circuit Function On/Off
+        case 134:
+            {
+
+                if (data[packetFields.DEST] == ctrl.MAIN) {
+                    var status = {
+
+                        source: null,
+                        destination: null,
+                        b3: null,
+                        CMD: null,
+                        sFeature: null,
+                        ACTION: null,
+                        b7: null
+
+                    }
+                    status.source = data[packetFields.FROM]
+                    status.destination = data[packetFields.DEST]
+                    status.b3 = data[2] //134... always?
+                    status.CMD = data[3] == 4 ? 'pool temp' : 'feature'; // either 4=pool temp or 2=feature
+
+
+                    if (data[3] == 2) {
+                        status.sFeature = circuitArrStr(data[4])
+                        if (data[5] == 0) {
+                            status.ACTION = "off"
+                        } else if (data[5] == 1) {
+                            status.ACTION = "on"
+                        }
+                        console.log('Msg# %s   %s asking %s to change _%s %s to %s_ : %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], status.CMD, status.sFeature, status.ACTION, JSON.stringify(data));
+
+                        decoded = true;
+                        break;
+                    }
+
+
+
+                }
+            }
+        case 136:
+            {
+
+                if (data[packetFields.DEST] == ctrl.MAIN) {
+                    var status = {
+
+                        source: null,
+                        destination: null,
+                        b3: null,
+                        CMD: null,
+                        sFeature: null,
+                        ACTION: null,
+                        b7: null
+
+                    }
+                    status.source = data[packetFields.FROM]
+                    status.destination = data[packetFields.DEST]
+                    status.b3 = data[2] //134... always?
+                    status.CMD = data[3] == 4 ? 'pool temp' : 'feature'; // either 4=pool temp or 2=feature
+
+
+
+
+                    if (data[3] == 4) {
+                        status.POOLSETPOINT = data[4];
+                        status.SPASETPOINT = data[5];
+                        status.POOLHEATMODE = heatMode[data[6] & 3]; //mask the data[6] with 0011
+                        status.SPAHEATMODE = heatMode[(data[6] & 12) >> 2]; //mask the data[6] with 1100 and shift right two places
+                        console.log('Msg# %s   %s asking %s to change pool heat mode to %s (@ %s degrees) % spa heat mode to %s (at %s degrees): %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], status.POOLHEATMODE, status.POOLSETPOINT, status.SPAHEATMODE, status.SPASETPOINT, JSON.stringify(data));
+
+                        decoded = true;
+                        break;
+                    }
+
+
+
+                }
+            }
+        default:
+            {
+                if (loglevel == 1) {
+                    var currentAction = strActions[data[packetFields.ACTION]]
+                    if (currentAction != undefined) {
+                        console.log('Msg# %s %s packet: %s', counter, currentAction, data)
+                        decoded = true;
+                    } else {
+                        console.log(('Msg# %s is NOT DEFINED packet: %s', counter, data))
+                    }
+                }
+                decoded = true;
             }
 
 
         }
 
-    } else
+    }
 
+    //I believe this should be any packet with 165,0.  Need to verify.
+    if (((data[packetFields.FROM] == ctrl.PUMP1 || data[packetFields.FROM] == ctrl.PUMP2)) || data[packetFields.DEST] == ctrl.PUMP1 || data[packetFields.DEST] == ctrl.PUMP2)
 
-    if (((data[packetFields.FROM] == ctrl.PUMP1 || data[packetFields.FROM] == ctrl.PUMP2) && data[packetFields.DEST] == ctrl.MAIN) || ((data[packetFields.DEST] == ctrl.PUMP1 || data[packetFields.DEST] == ctrl.PUMP2) && data[packetFields.FROM] == ctrl.MAIN))
-
-    //  --> Could be from/to control and from/to pump.  Check all????  Or is data length 8 sufficient
-    //&& data[packetFields.FROM] == ctrl.MAIN  && (data[packetFields.DEST] == ctrl.PUMP1 || data[packetFields.DEST] == ctrl.PUMP2)
     {
-
+        if (pumpMessages == 1) console.log('Decoding pump packet %s', data)
         if (instruction == null || instruction == undefined || instruction == '') {
             instruction = data;
-            console.log('Msg# %s   Setting initial chatter as instruction: %s', counter, instruction)
+            if (loglevel == 1) console.log('Msg# %s   Setting initial chatter as instruction: %s', counter, instruction)
         }
 
-        var isResponse = data.isResponse(instruction);
+        //var isResponse = data.isResponse(instruction);
         var ctrlType = data2;
 
         //Send request/response for pump status
-        if (data[pumpPacketFields.ACTION] == 7) {
-            if (data[pumpPacketFields.CMD] == 1) //Request pump status
+        if (data[packetFields.ACTION] == 7) {
+            if (data[packetFields.CMD] == 1) //Request pump status
             {
-                if (pumpMessages) console.log('Msg# %s   Main asking %s for status: %s', counter, ctrlString[data[pumpPacketFields.DEST]], JSON.stringify(data));
+                if (pumpMessages) console.log('Msg# %s   Main asking %s for status: %s', counter, ctrlString[data[packetFields.DEST]], JSON.stringify(data));
                 decoded = true;
             } else //Response to request for status 
             {
@@ -961,7 +1252,7 @@ function decode(data, counter) {
 
                 }
 
-                var pumpnum = (data[pumpPacketFields.FROM]).toString();
+                var pumpnum = (data[packetFields.FROM]).toString();
                 //time returned in HH:MM (24 hour)  <-- need to clean this up so we don't get times like 5:3
                 status.time = data[pumpPacketFields.HOUR] + ':' + data[pumpPacketFields.MIN];
                 status.run = data[pumpPacketFields.CMD]
@@ -978,65 +1269,65 @@ function decode(data, counter) {
             }
         } else
 
-        if (data[pumpPacketFields.ACTION] == 4) //Pump control panel on/off
+        if (data[packetFields.ACTION] == 4) //Pump control panel on/off
         {
             if (data[pumpPacketFields.CMD] == 255) //Set pump control panel off (Main panel control only)
             {
-                if (!isResponse) {
-                    if (pumpMessages) console.log('Msg# %s   %s asking %s for remote control (turn off pump control panel): %s', counter, ctrlString[data[pumpPacketFields.FROM]], ctrlString[data[pumpPacketFields.DEST]], JSON.stringify(data));
+                if (!responseBool) {
+                    if (pumpMessages) console.log('Msg# %s   %s asking %s for remote control (turn off pump control panel): %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], JSON.stringify(data));
                     decoded = true;
                 } else {
-                    if (pumpMessages) console.log('Msg# %s   %s confirming it is in remote control: %s', counter, ctrlString[data[pumpPacketFields.FROM]], JSON.stringify(data))
+                    if (pumpMessages) console.log('Msg# %s   %s confirming it is in remote control: %s', counter, ctrlString[data[packetFields.FROM]], JSON.stringify(data))
                     decoded = true;
                 }
             }
             if (data[pumpPacketFields.CMD] == 0) //Set pump control panel on 
             {
-                if (!isResponse) {
-                    if (pumpMessages) console.log('Msg# %s   %s asking %s for local control (turn on pump control panel): %s', counter, ctrlString[data[pumpPacketFields.FROM]], ctrlString[data[pumpPacketFields.DEST]], JSON.stringify(data))
+                if (!responseBool) {
+                    if (pumpMessages) console.log('Msg# %s   %s asking %s for local control (turn on pump control panel): %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], JSON.stringify(data))
                     decoded = true;
                 } else {
-                    if (pumpMessages) console.log('Msg# %s   %s confirming it is in local control: %s', counter, ctrlString[data[pumpPacketFields.FROM]], JSON.stringify(data))
+                    if (pumpMessages) console.log('Msg# %s   %s confirming it is in local control: %s', counter, ctrlString[data[packetFields.FROM]], JSON.stringify(data))
                     decoded = true;
                 }
             }
-        } else if (data[pumpPacketFields.ACTION] == 1) //Write command to pump
+        } else if (data[packetFields.ACTION] == 1) //Write command to pump
         {
             if (data[pumpPacketFields.LENGTH] == 4) //This might be the only packet where isResponse() won't work because the pump sends back a validation command
             {
                 var pumpCommand = '';
-                for (var i = 1; i < data[pumpPacketFields.LENGTH]; i++) {
-                    pumpCommand += data[i + pumpPacketFields.LENGTH] //Not sure if it is a coincidence that pumpPacketFields.LENGTH ==4, but the 4th byte is the start of the message.
+                for (var i = 1; i < data[packetFields.LENGTH]; i++) {
+                    pumpCommand += data[i + packetFields.LENGTH] //Not sure if it is a coincidence that pumpPacketFields.LENGTH ==4, but the 4th byte is the start of the message.
                     pumpCommand += ', '
                 }
 
-                if (pumpMessages) console.log('Msg# %s   %s asking %s to write a _%s_ command: %s', counter, ctrlString[data[pumpPacketFields.FROM]], ctrlString[data[pumpPacketFields.DEST]], pumpCommand, JSON.stringify(data));
+                if (pumpMessages) console.log('Msg# %s   %s asking %s to write a _%s_ command: %s', counter, ctrlString[data[pumpPacketFields.FROM]], ctrlString[data[packetFields.DEST]], pumpCommand, JSON.stringify(data));
                 decoded = true;
             } else {
                 var pumpResponse = ''
                 pumpResponse += data[pumpPacketFields.LENGTH + 1] + ', ' + data[pumpPacketFields.LENGTH + 2]
-                if (pumpMessages) console.log('Msg# %s   %s sent response _%s_ to write command: %s', counter, ctrlString[data[pumpPacketFields.FROM]], pumpResponse, JSON.stringify(data));
+                if (pumpMessages) console.log('Msg# %s   %s sent response _%s_ to write command: %s', counter, ctrlString[data[packetFields.FROM]], pumpResponse, JSON.stringify(data));
                 decoded = true;
             }
 
 
-        } else if (data[pumpPacketFields.ACTION] == 5) //Set pump mode
+        } else if (data[packetFields.ACTION] == 5) //Set pump mode
         {
-            if (!isResponse) {
-                if (pumpMessages) console.log('Msg# %s   %s asking %s to set pump mode to _%s_: %s', counter, ctrlString[data[pumpPacketFields.FROM]], ctrlString[data[pumpPacketFields.DEST]], data[pumpPacketFields.CMD], JSON.stringify(data));
+            if (!responseBool) {
+                if (pumpMessages) console.log('Msg# %s   %s asking %s to set pump mode to _%s_: %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], data[pumpPacketFields.CMD], JSON.stringify(data));
                 decoded = true;
             } else {
-                if (pumpMessages) console.log('Msg# %s   %s confirming it is in mode _%s_: %s', counter, ctrlString[data[pumpPacketFields.FROM]], data[pumpPacketFields.CMD], JSON.stringify(data));
+                if (pumpMessages) console.log('Msg# %s   %s confirming it is in mode _%s_: %s', counter, ctrlString[data[packetFields.FROM]], data[packetFields.CMD], JSON.stringify(data));
                 decoded = true;
             }
 
-        } else if (data[pumpPacketFields.ACTION] == 6) //Set run mode
+        } else if (data[packetFields.ACTION] == 6) //Set run mode
         {
-            if (!isResponse) {
-                if (pumpMessages) console.log('Msg# %s   %s asking %s to set run to _%s_: %s', counter, ctrlString[data[pumpPacketFields.FROM]], ctrlString[data[pumpPacketFields.DEST]], data[pumpPacketFields.CMD], JSON.stringify(data));
+            if (!responseBool) {
+                if (pumpMessages) console.log('Msg# %s   %s asking %s to set run to _%s_: %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], data[packetFields.CMD], JSON.stringify(data));
                 decoded = true;
             } else {
-                if (pumpMessages) console.log('Msg# %s   %s confirming it is in run _%s_: %s', counter, ctrlString[data[pumpPacketFields.FROM]], data[pumpPacketFields.CMD], JSON.stringify(data));
+                if (pumpMessages) console.log('Msg# %s   %s confirming it is in run _%s_: %s', counter, ctrlString[data[packetFields.FROM]], data[pumpPacketFields.CMD], JSON.stringify(data));
                 decoded = true;
             }
         } else {
@@ -1044,64 +1335,20 @@ function decode(data, counter) {
             decoded = true;
         }
         instruction = data.slice();
-    } else if (((data[packetFields.FROM] == ctrl.REMOTE || data[packetFields.FROM] == ctrl.WIRELESS) && data[packetFields.DEST] == ctrl.MAIN) || ((data[packetFields.DEST] == ctrl.REMOTE || data[packetFields.DEST] == ctrl.WIRELESS) && data[packetFields.FROM] == ctrl.MAIN)) {
-        if (data[packetFields.DEST] == 16) {
-            var status = {
-
-                source: null,
-                destination: null,
-                b3: null,
-                CMD: null,
-                sFeature: null,
-                ACTION: null,
-                b7: null
-
-            }
-            status.source = data[packetFields.FROM]
-            status.destination = data[packetFields.DEST]
-            status.b3 = data[2] //134... always?
-            status.CMD = data[3] == 4 ? 'pool temp' : 'feature'; // either 4=pool temp or 2=feature
-            if (data[3] == 2) {
-                status.sFeature = circuitArrStr(data[4])
-                if (data[5] == 0) {
-                    status.ACTION = "off"
-                } else if (data[5] == 1) {
-                    status.ACTION = "on"
-                }
-                console.log('Msg# %s   %s asking %s to change _%s %s to %s_ : %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], status.CMD, status.sFeature, status.ACTION, JSON.stringify(data));
-                decoded = true;
-            } else if (data[3] == 4) {
-                status.POOLSETPOINT = data[4];
-                status.SPASETPOINT = data[5];
-                status.POOLHEATMODE = heatMode[data[6] & 3]; //mask the data[6] with 0011
-                status.SPAHEATMODE = heatMode[(data[6] & 12) >> 2]; //mask the data[6] with 1100 and shift right two places
-                console.log('Msg# %s   %s asking %s to change pool heat mode to %s (@ %s degrees) % spa heat mode to %s (at %s degrees): %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], status.POOLHEATMODE, status.POOLSETPOINT, status.SPAHEATMODE, status.SPASETPOINT, JSON.stringify(data));
-                decoded = true;
-            } else if (data[3] == 16) {
-                //165, 10, 15, 16, 10, 12, 0, 87, 116, 114, 70, 97, 108, 108, 32, 49, 0, 251, 4, 236
-                console.log('12! else: %s', JSON.stringify(data))
-                var myString = '';
-                for (var i = 0; i < data.length; i++) {
-                    myString += String.fromCharCode(data[i])
-                }
-                console.log('Msg# %s   %s sending %s _%s_ : %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], myString, JSON.stringify(data));
-            }
-        }
     }
+
+
+
+
     //in case we get here and the first message has not already been set as the instruction command
     if (instruction == null || instruction == undefined) {
         instruction = data;
     }
     if (!decoded) {
-        fulllogger.debug('Msg# %s   Starting to decode message.', counter)
         if (showConsoleNotDecoded) {
-            if (data[2] == 32 && data[3] == 11) {
-                console.log('*********')
-            }
-            console.log('Msg# %s is %s', counter, JSON.stringify(data));
-            if (data[2] == 32 && data[3] == 11) {
-                console.log('*********')
-            }
+
+            console.log('Msg# %s is NOT DECODED %s', counter, JSON.stringify(data));
+
         };
     } else(decoded = false)
     return true; //fix this; turn into callback(?)  What do we want to do with it?
@@ -1109,6 +1356,170 @@ function decode(data, counter) {
 
 
 
+//this function is the "broker" between the receiving workflow and the sending workflow
+function isResponse(chatter, counter) {
+
+    if (loglevel == 1) console.log('Enterning isResponse: %s %s', chatter, counter)
+
+    //make copies of the object so we assign the variables by value and not change the originals (by reference)
+    //need to use the clone function because slice doesn't work on objects for by value copy
+    tempObj = clone(chatter);
+
+    objSrc = this[packetFields.FROM];
+    objDest = this[packetFields.DEST];
+    tempObj[packetFields.DEST] = objSrc;
+    tempObj[packetFields.FROM] = objDest;
+
+
+    if (loglevel == 1) {
+        console.log('queuePacketsArr.length: %s   tempObj.equals(chatter): %s ', queuePacketsArr.length, tempObj.equals(chatter))
+    }
+
+
+    //For Broadcast Packets
+    //Ex set circuit name[255,0,255,165, 10, 16, 32, 139, 5, 7, 0, 7, 0, 0, 1, 125]
+    //Ex ACK circuit name[165,10,15,16,10,12,0,85,83,69,82,78,65,77,69,45,48,49]  
+
+    //console.log('Msg#: %s chatter: %s chatterreceived.action: %s (1??)  chatterreceieved.4: %s == queue[0].action: %s ALL TRUE?  %s ', counter, chatter, chatter[packetFields.ACTION], chatter[4], queuePacketsArr[0][7], ((chatter[packetFields.ACTION] == 1) && (chatter[4] == queuePacketsArr[0][7])))
+
+    //...OR.... check for bitwise isResponse
+
+    if (loglevel == 1) console.log('Msg#: %s  chatterreceived.action: %s (10?) == queue[0].action&63: %s ALL TRUE?  %s \n\n', counter, chatter[packetFields.ACTION], queuePacketsArr[0][7] & 63, ((chatter[packetFields.ACTION] == (queuePacketsArr[0][7] & 63))))
+
+
+
+    if (queuePacketsArr.length > 0) {
+        //If an ACK
+        if (chatter[packetFields.ACTION] == 1 && chatter[4] == queuePacketsArr[0][7]) {
+            successfulAck(true, counter);
+            decode(chatter, counter, true);
+        }
+        //If a broadcast response to request 202 --> 10
+        else if ((chatter[packetFields.ACTION] == (queuePacketsArr[0][7] & 63))) {
+
+            successfulAck(true, counter);
+            decode(chatter, counter, true);
+        }
+    }
+    //This is for pump messages.  Messages will be exactly the same exact dest/src will be swapped.
+    if (tempObj.equals(chatter)) {
+        if (queuePacketsArr.length > 0) {
+            successfulAck(false, counter, chatter)
+        }
+        decode(chatter, counter, true)
+    } else
+    if (queuePacketsArr.length > 0) {
+        successfulAck(false, counter, chatter)
+    } else {
+        decode(chatter, counter, false)
+            //console.log('Msg#: %s In isResponse -- Not a. %s', counter, chatter)
+    }
+
+};
+
+
+
+//------------------START WRITE SECTION
+
+
+function successfulAck(messageAck, counter, chatter) {
+    fulllogger.silly('Msg#: in successfulAck  messageAck: %s counter: %s  packetWrittenAt: %s  queuePacketsArr.length: %s', counter, messageAck, counter, packetWrittenAt, queuePacketsArr.length)
+    if (loglevel == 1) console.log('Msg# %s  Comparing Message received:  %s to message written: %s', counter, chatter, queuePacketsArr[0])
+    if (messageAck == true) {
+        queuePacketsArr.shift();
+
+        //Only call writePacket if there are more instructions to write to the serial bus
+        if (queuePacketsArr.length > 0) {
+            writePacket()
+        };
+    } else {
+
+        if (queuePacketsArr.length > 1) {
+            //console.log('****HOW MANY RETRIES:  counter: %s   packetwrittenAt: %s  diff: %s', counter, packetWrittenAt, counter-                packetWrittenAt)
+            //what is the best way to send messages again?
+            if (counter - packetWrittenAt > 5) {
+
+                //retry same packet
+                writePacket();
+            }
+        }
+    }
+}
+
+function queuePacket(message) {
+
+
+    //Process the packet to include the preamble and checksum
+
+    var packet = [255, 0, 255];
+    //var pumpPacket = [165, 10, 16, 34, 136, 4, 88, 0, 3, 0, ]
+    var checksum = 0;
+    for (var j = 0; j < message.length; j++) {
+        checksum += message[j]
+    }
+    message.push(checksum >> 8)
+    message.push(checksum & 0xFF)
+
+    Array.prototype.push.apply(packet, message);
+
+
+    //-------Internally validate checksum
+
+    //example packet: 255,0,255,165,10,16,34,2,1,0,0,228
+    var len = packet.length;
+
+    //checksum is calculated by 256*2nd to last bit + last bit 
+    var packetchecksum = (packet[len - 2] * 256) + packet[len - 1];
+    var databytes = 0;
+
+    // add up the data in the payload
+    for (var i = 3; i < len - 2; i++) {
+        databytes += packet[i];
+    }
+    var validPacket = (packetchecksum == databytes);
+    if (!validPacket) {
+        console.log('***Asking to queue malformed packet: %s', packet)
+    } else {
+        queuePacketsArr.push(packet);
+        console.log('Just Queued Message to send: %s', packet)
+    }
+
+
+    //-------End Internally validate checksum
+
+
+
+
+
+
+    fulllogger.silly('after push packet: %s  Message: %s', packet, message)
+
+    //if length > 0 then we will loop through from isResponse
+    if (queuePacketsArr.length == 1)
+        writePacket();
+
+
+
+
+}
+
+var packetWrittenAt; //var to hold the message counter variable when the message was sent.  Used to keep track of how many messages passed without a successful counter.
+
+function writePacket() {
+    fulllogger.silly('Entering Write Queue')
+
+
+    console.log('Sending packet: %s', queuePacketsArr[0])
+    sp.write(queuePacketsArr[0], function (err, bytesWritten) {
+        sp.drain(function () {
+            if (loglevel == 1) console.log('Wrote ' + queuePacketsArr[0] + ' and # of bytes ' + bytesWritten + ' Error?: ' + err)
+        });
+
+    })
+    packetWrittenAt = msgCounter;
+
+
+}
 
 
 //Credit to this function belongs somewhere on Stackoverflow.  Need to find it to give credit.
@@ -1162,7 +1573,7 @@ Object.defineProperty(Object.prototype, "equals", {
                 return false;
             }
         }
-        //If everything passed, let's say YES
+        //If everything passed, let's say TRUE
         return true;
     }
 })
@@ -1246,28 +1657,33 @@ function clone(obj) {
     return copy;
 }
 
-Object.defineProperty(Object.prototype, "isResponse", {
-    enumerable: false,
-    writable: true,
-    value: function (object2) {
-
-        //make copies of the object so we assign the variables by value and not change the originals (by reference)
-        //need to use the clone function because slice doesn't work on objects for by value copy
-        tempObj = clone(this);
-
-        //this doesn't work -- it copies by reference not by value
-        //tempObj = this.slice();
-
-        objSrc = this[packetFields.FROM];
-        objDest = this[packetFields.DEST];
-        tempObj[packetFields.DEST] = objSrc;
-        tempObj[packetFields.FROM] = objDest;
 
 
-        //If the objects are now equal, return true.
-        return (tempObj.equals(object2));
+function getConfiguration(callback) {
+    sp.drain();
+
+
+
+
+    var i = 0;
+    for (i; i < 10; i++) {
+
+        //writePacket([165, 10, 16, 34, 202, 1, i]) 
+        queuePacket([165, 10, 16, 34, 202, 1, i]);
+
+
     }
-});
+    for (i = 1; i < 21; i++) {
+
+        //writePacket([165, 10, 16, 34, 203, 1, i])
+        queuePacket([165, 10, 16, 34, 203, 1, i]);
+
+    }
+
+
+
+}
+
 
 
 
@@ -1302,50 +1718,42 @@ var numUsers = 0;
 
 
 
+
 io.on('connection', function (socket) {
 
     // when the client emits 'toggleEquipment', this listens and executes
     socket.on('toggleEquipment', function (equipment) {
 
-        console.log('User wants to toggle: ' + equipment); // + ' config: ' + poolConfig.Pentair['9'] + ' or?? ' + poolConfig.Pentair['circuit9'])
-        //Msg# 900   Wireless asking Main to change _feature Path Lights to on_ : [16,34,134,2,9,1,1,115]
-        //var packet = [00, 255, 165, 16, 34, 134, 2, 9, 1, 1, 115]; //no
+        //console.log('User wants to toggle: %s. %s', equipment, JSON.stringify(equipment));
 
 
-        /* var a = (00).toString(16);
-         var b = (255).toString(16);
-         var c = (165).toString(16);
-         var d = (16).toString(16);
-         var e = (34).toString(16);
-         var f = (134).toString(16);
-         var g = (2).toString(16);
-         var h = (9).toString(16);
-         var i = (1).toString(16);
-         var j = (1).toString(16);
-         var k = (115).toString(16);
-         var packet2 = [a, b, c, d, e, f, g, h, i, j, k];
-         var packet3 = [(00).toString(16), (255).toString(16), (165).toString(16), (16).toString(16), (34).toString(16), (134).toString(16), (2).toString(16), (9).toString(16), (1).toString(16), (1).toString(16), (115).toString(16)];  */
 
-        //var packetBuffer = Buffer.from([0x00, 0x255, 0x165, 0x16, 0x34, 0x134, 0x2, 0x9, 0x1, 0x1, 0x115]); //this?
-        //var packetBuffer2 = Buffer.from([00, 255, 165, 16, 34, 134, 2, 9, 1, 1, 115]); //or this?
-        //var packet4 = [0x00, 0x255, 0x165, 0x16, 0x34, 0x134, 0x2, 0x9, 0x1, 0x1, 0x115];
-        sp.write([00, 255, 165, 16, 34, 134, 2, 9, 1, 1, 115], function (err, bytesWritten) {
+        //var packet = [255, 0, 255];
+        var desiredStatus = currentCircuitArrObj[equipment].status == "on" ? 0 : 1;
+        var checksum = 0;
+        var toggleCircuitPacket = [165, 10, 16, 34, 134, 2, equipment, desiredStatus];
+        /*for (var j = 0; j < toggleCircuitPacket.length; j++) {
+            checksum += toggleCircuitPacket[j]
+        }
+        toggleCircuitPacket.push(checksum >> 8)
+        toggleCircuitPacket.push(checksum & 0xFF)*/
+        //Array.prototype.push.apply(packet, toggleCircuitPacket);
+
+        //Push packet to beginning of input because there is no local echo.
+        //const buf1 = Buffer.from(packet);
+        //data2 = Buffer.concat([buf1, data2]);
+
+        queuePacket(toggleCircuitPacket);
+        /*sp.write(packet, function (err, bytesWritten) {
             sp.drain(function () {
-                console.log('Wrote ' + bytesWritten + ' to serial port!!! and error: ' + err)
+                if (err) {
+                    console.log('Error (%s) writing packet: %s', err, packet)
+                } else
+                    console.log('Wrote ' + packet + ' and bytes ' + bytesWritten)
             });
 
-        })
-        console.log('serial port is open?: ', sp.isOpen());
-        /*
-                 sp.write([00, 255, 165, 16, 34, 134, 2, 9, 1, 1, 115], function (err) {
-                         if (err) {console.log('error writing to port: ', err.message);
-                     }
-                     console.log('message written x2');
-                 });
-        */
+        })*/
 
-        //   sp.close();
-        //sp.open();
 
     });
 
@@ -1363,7 +1771,7 @@ io.on('connection', function (socket) {
     //var tempStatus = '';
     //if (!currentStatus) tempStatus = 
     io.sockets.emit('status',
-        currentStatus
+        currentCircuitArrObj
     );
 
     io.sockets.emit('searchResults',

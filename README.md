@@ -1,11 +1,9 @@
-# Latest version 0.0.6 released 7/24/16.  Please see important notes below in version info!
+# Latest version 0.0.7 released 8/16/16.  
 tl;dr
 
  Important changes:
 
- Configuration is now read from your pool.  In order to force the controller to broadcast the configuration, change the setpoint of your heater (or any configuration that is saved in the controller) and it will rebroadcast the pool configuration.
-
- I am working on writing back to the bus and once I can successfully do this I will ask the controller for the config so this step is not necessary.
+ Configuration is now read from your pool.  The app will send the commands to read the custom name strings and circuit names.  The UI may take up to 1 minute to fully load.
 
  Visit http://_your_machine_name_:3000 to see a basic UI
 
@@ -70,35 +68,18 @@ Initial - This version was the first cut at the code
 * http://_your_machine_name_:3000/debug.html for a way to listen for specific messages
 * It is clear that I will need to change around the internal structure of how the circuits and equipment information is stored so that it can be better presented in the UI and display can be dependent on circuit type (pool, spa, lights, etc) and desired changes (on/off, set temperature, set mode, etc) can know what information is needed
 
+0.0.7 -
+* Writeback enabled!  (after much frustration)
+* UI for web updated
+* Refactored code in many different ways
+* Really messed up the logging in the course of debugging.  I need to fix this.
+* Need to still update the web UI for the status of the system and also the REST api for hooks to other HA apps.
+* I'm having trouble with the RS485 cable above, but purchased another one for <$5 from Amazon that is working better.
 
 # Configuration
 1.  Edit the config.json to match your PHYSICAL circuits.  The code will dynamically map the circuits to their virtual counterparts automatically.  You can not get this from the iPhone, iPad (or Android?) apps.  You will need to go to the controller to get the physical mapping or look in the setup section of your ScreenLogic app.  They aren't numbered, either, so just add them in the order you see them.
 
-*You must skip circuit 10.  I don't know why, or I'm missing something, but it doesn't seem to be used.*
-    ```
-    {
-    "Pentair": {
-        "circuit1": "Spa",
-        "circuit2": "Jets",
-        "circuit3": "Air Blower",
-        "circuit4": "Cleaner",
-        "circuit5": "WaterFall 1.5",
-        "circuit6": "Pool",
-        "circuit7": "Spa Lights",
-        "circuit8": "Pool Lights",
-        "circuit9": "Path Lights",
-        "circuit10": "<--SKIP ME-->",
-        "circuit11": "Spillway",
-        "circuit12": "Waterfall 1",
-        "circuit13": "Waterfall 2",
-        "circuit14": "Waterfall 3",
-        "circuit15": "Pool Low",
-        "circuit16": "Feature6",
-        "circuit17": "Feature7",
-        "circuit18": "Feature8"
-    }
-}
-        ```
+
 # Methodology
 
 The RS-485 bus is VERY active!  It sends a lot of broadcasts, and instructions/acknowledgements.  I tried to filter out all repeating messages, and add some text descriptions to the known (but not decoded) messages like heater commands, valves, etc.  We already have some of the pump commands.
