@@ -1,35 +1,46 @@
-# Latest version 0.0.7 released 8/16/16.  
+# Latest version 0.0.8
 tl;dr
 
  Important changes:
 
- Configuration is now read from your pool.  The app will send the commands to read the custom name strings and circuit names.  The UI may take up to 1 minute to fully load.
-
+ Configuration is now read from your pool.  The app will send the commands to read the custom name strings, circuit names and schedules.  
+ 
+ The web UI will dynamically load as the information is received.
+ 
  Visit http://_your_machine_name_:3000 to see a basic UI
-
+ 
  Visit http://_your_machine_name_:3000/debug.html for a way to listen for specific messages
+ 
+ Logging has been significantly revised.  See the log variables in index.js to adjust.
 
+ REST/API:  You can use Sockets.IO to subscribe to updates (see the "basic UI" example).  
+ You can also call REST URI's like:
+    Get circuit status: http://yourmachine:3000/circuit/# to get the status of circuit '#'
+    Toggle circuit status: http://yourmachine:3000/circuit/#/toggle to get the toggle circuit '#'
+    Get system status: http://yourmachine:3000/status
+    Get schedules: http://yourmachine:3000/schedule
+    Get pump status: http://yourmachine:3000/pump
+    
 
 
 # nodejs-Pentair
 
-This is a set of test code to read the Pentair system messages off of the RS-485 serial bus.  
+This is a set of test code to read and write back to the Pentair system messages off of the RS-485 serial bus.  
 
-This code will hopefully build upon the work of others in understanding the protocol and enable stand-alone control or inclusion in a home automation project.  I personally want to use this to create another module for the [HomeBridge page](https://github.com/nfarina/homebridge) (Apple Homekit integration for the impatient).
+This code will build upon the work of others in understanding the protocol and enable stand-alone control or inclusion in a home automation project.  I personally want to use this to create another module for the [HomeBridge page](https://github.com/nfarina/homebridge) (Apple Homekit integration for the impatient).
 
 See credits below as many have done great work before me.
 
 My goals of this project are:
 1.  Understand the messages on the bus.  There are many that are understood, but even more that are still a mystery.
 2.  Build code that can be used as a plug-in (phase II)
-3.  Build this in such a way that it can work with any pool setup.
-
-Let me elaborate on #3.  Both the awesome work of Jason Y and Michael were specific to their pool (I didn't even look closely at the #2 Credit code because it was in C).  
 
 
 # Installation
 
-1. This code **REQUIRES** a RS485 serial module.  There are plenty of sites out there that describe the RS485 and differences from RS232 so I won't go into detail here.  I purchased [EZSync FTDI](http://www.amazon.com/EZSync-RS485-USB-RS485-WE-compatible-EZSync010/dp/B010KJSCR8?ie=UTF8&psc=1&redirect=true&ref_=oh_aui_detailpage_o01_s00) but I think others will do
+1. This code **REQUIRES** a RS485 serial module.  There are plenty of sites out there that describe the RS485 and differences from RS232 so I won't go into detail here.  I purchased [EZSync FTDI](http://www.amazon.com/EZSync-RS485-USB-RS485-WE-compatible-EZSync010/dp/B010KJSCR8?ie=UTF8&psc=1&redirect=true&ref_=oh_aui_detailpage_o01_s00) but I think others will do.
+UPDATE - I had trouble with the EZSync.  I purchase a very inexpensive [JBTek](https://www.amazon.com/gp/product/B00NKAJGZM/ref=oh_aui_search_detailpage?ie=UTF8&psc=1) adapter and had better luck with it.
+
 2.  I will add more later about the actual wiring of the adapter, but I used the Ground<--> Ground, and the DATA+ and DATA- (no power needed as your Pentair adapters already are powered and so is my RS-485 adapter.
 3.  To see if you are getting the proper communications from the bus, before you even try to run this program, run from your *nix command line ```od -x < /dev/ttyUSB0```.  Of course, you'll need to change the address of your RS-485 adapter if it isn't the same as mine (here and in the code).
 
@@ -79,45 +90,47 @@ Initial - This version was the first cut at the code
 * I'm having trouble with the RS485 cable above, but purchased another one for <$5 from Amazon that is working better.
 
 
-
+0.0.8 -
+*Significantly revised the logging.  It now comes with more options, and by default, is much quieter.
+*Got rid of the logging to the files.  It wasn't useful.  Winston can easily be modified to write back to the log files if your situation dictates this.
+*Sockets.io compatability
+*REST API
 
 # Methodology
 
-The RS-485 bus is VERY active!  It sends a lot of broadcasts, and instructions/acknowledgements.  I tried to filter out all repeating messages, and add some text descriptions to the known (but not decoded) messages like heater commands, valves, etc.  We already have some of the pump commands.
+The RS-485 bus is VERY active!  It sends a lot of broadcasts, and instructions/acknowledgements.  Many commands are known, but feel free to help debug more if you are up for the challenge!  See the wiki for what we know.  Below are a sample of the message
 
 Request for a status change:
 ```
-Msg# 16   Wireless asking Main to change pool heat mode to Heater (@ 87 degrees) % spa heat mode to Solar Only (at 100 degrees): [16,34,136,4,87,100,13,0,2,53]
-Msg# 326   Remote asking Main to change _feature Path Lights to on_ : [16,32,134,2,9,1,1,113]
+22:14:20.171 INFO Msg# 739   Wireless asking Main to change pool heat mode to Solar Only (@ 88 degrees) & spa heat mode to Solar Only (at 100 degrees): [16,34,136,4,88,100,15,0,2,56]
+
 ```
 
-When any circuit is changed, I display a full breakdown of all the circuits and their current status.  This helps them stand out in the logs.  For my pool, a change of a circuit will appear as:
+When the app starts, it will show the circuits that it discovers.  For my pool, the circuits are:
 ```
--->EQUIPMENT Msg# 25   
- Equipment Status:  { time: '8:57',
-  waterTemp: 26,
-  temp2: 26,
-  airTemp: 18,
-  solarTemp: 18,
-  uom: '° Celsius',
-  Spa: 'off',
-  Jets: 'off',
-  'Air Blower': 'off',
-  Cleaner: 'off',
-  'WaterFall 1.5': 'off',
-  Pool: 'off',
-  'Spa Lights': 'off',
-  'Pool Lights': 'off',
-  'Path Lights': 'off',
-  '<--SKIP ME-->': 'off',
-  Spillway: 'off',
-  'Waterfall 1': 'off',
-  'Waterfall 2': 'off',
-  'Waterfall 3': 'off',
-  'Pool Low': 'on',
-  Feature6: 'off',
-  Feature7: 'off',
-  Feature8: 'off' }
+22:07:59.241 INFO Msg# 51  Initial circuits status discovered:
+SPA : off
+JETS : off
+AIR BLOWER : off
+CLEANER : off
+WtrFall 1.5 : off
+POOL : on
+SPA LIGHT : off
+POOL LIGHT : off
+PATH LIGHTS : off
+SPILLWAY : off
+WtrFall 1 : off
+WtrFall 2 : off
+WtrFall 3 : off
+Pool Low2 : on
+NOT USED : off
+NOT USED : off
+NOT USED : off
+AUX EXTRA : off
+```
+
+To dispaly the messages below, change the logging level to VERBOSE.
+```
 Msg# 25   What's Different?:  uom: ° Celsius --> ° Farenheit
                           S       L                                                           W               A   S
                           O       E           M   M   M                                       T               I   O
@@ -130,22 +143,12 @@ Orig:                15, 16,  2, 29,  8, 57,  0, 64,  0,  0,  0,  0,  0,  4,  3,
 Diff:                                                                     *                                                                   *            
  <-- EQUIPMENT 
 ```
-An example of pump communication:  ***As of 0.0.3, these are suppressed.  I would like to have a persistent variable for these like the pool status so they will only display when they change.  TBD.
+An example of pump communication.  To show these, change logPumpMessages from 0 to 1. 
 ```
 --> PUMP  Pump1 
  Pump Status:  {"pump":"Pump1","power":1,"watts":170,"rpm":1250} 
  Full Payload:  [16,96,7,15,10,0,0,0,170,4,226,0,0,0,0,0,1,22,14,2,234] 
 <-- PUMP  Pump1 
-```
-
-***The following not displayed in console by default starting in 0.0.3.  You can view them in the logs or change the logging options to show in the console.***
-An example of a few lines of known code:
-```
-Msg# 16   Main asking Pump1 for remote control (turn off pump control panel): [96,16,4,1,255,2,25]
-Msg# 17   Pump1 confirming it is in remote control: [16,96,4,1,255,2,25]
-Msg# 18   Main asking Pump1 to set run to _10_: [96,16,6,1,10,1,38]
-Msg# 19   Main confirming it is in run _10_: [16,96,6,1,10,1,38]
-Msg# 20   Main asking Pump1 to write a _2, 196, 8, _ command: [96,16,1,4,2,196,8,2,1,234]
 ```
 
 
@@ -154,16 +157,12 @@ An example of an unknown payload:
 Unknown chatter:  [97,16,4,1,255,2,26]
 ```
 
-An example of an identified instruction/response:  
-```
-Chatter [16,97,4,1,255,2,26] is acknowledgement to instruction [97,16,4,1,255,2,26]
-```
 
 # Known Issues
-1.  Code is messy.  In debugging I randomly switch between data2, status, currentStatus, tmpStatus, etc.  I will fix this up in the future
-2.  Still want to decode more of the strings.
-3.  No write capabilities yet.  These are forthcoming.
-4.  My logging is not where I want it to be.  I'd like to make various logging levels but for now there are only two.  If you want more logging, set
+1.  Still many messages to debug
+2.  Still many messages to debug
+3.  Still many messages to debug
+
 
 # Protocol
 If you read through the below links, you'll quickly learn that the packets can vary their meaning based upon who they are sending the message to, and what they want to say.  It appears the same message can come in 35, 38 or 32 bytes, but of course there will be some differences there.
