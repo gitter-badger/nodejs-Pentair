@@ -16,16 +16,16 @@ tl;dr
  Logging has been significantly revised.  See the log variables in index.js to adjust.
 
  REST/API:  You can use Sockets.IO to subscribe to updates (see the "basic UI" example).  
- You can also call REST URI's like:
-    *Get circuit status: /circuit/# to get the status of circuit '#'
-    *Toggle circuit status: /circuit/#/toggle to get the toggle circuit '#'
-    *Get system status: /status
-    *Get schedules: /schedule
-    *Get pump status: /pump
-    *Set spa heat setpoint: /spaheat/setpoint/#
-    *Set spa heat mode: /spaheat/mode/#  (0=off, 1=heater, 2=solar pref, 3=solar only)
-    *Set pool heat setpoint: /poolheat/setpoint/#
-    *Set pool heat mode: /poolheat/mode/# (0=off, 1=heater, 2=solar pref, 3=solar only)
+ You can also call REST URI's like:  
+ * Get circuit status: /circuit/# to get the status of circuit '#'
+ * Toggle circuit status: /circuit/#/toggle to get the toggle circuit '#'
+ * Get system status: /status
+ * Get schedules: /schedule
+ * Get pump status: /pump
+ * Set spa heat setpoint: /spaheat/setpoint/#
+ * Set spa heat mode: /spaheat/mode/#  (0=off, 1=heater, 2=solar pref, 3=solar only)
+ * Set pool heat setpoint: /poolheat/setpoint/#
+ * Set pool heat mode: /poolheat/mode/# (0=off, 1=heater, 2=solar pref, 3=solar only)
     
 
 
