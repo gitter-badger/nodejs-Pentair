@@ -31,9 +31,24 @@ $(function () {
 
     $('body').on('click', 'input', function () {
         //alert("event.target.id: " + event.target.id + " event.target.attr: " + JSON.stringify(event.target.attributes))
-
-        setEquipmentStatus($(this).data($(this).attr('id')));
+        if (!($(this).attr('id').includes('HeatMode'))) {
+            setEquipmentStatus($(this).data($(this).attr('id')));
+        }
     })
+
+    //listen for temp adjustments.
+    $('#circuit').on('click', 'button', function () {
+        setHeatSetPoint($(this).data('equip'), $(this).data('adjust'));
+    })
+
+    $('#spaHeatMode').on('click', 'input', function () {
+        setHeatMode($('#spaHeatMode').data('equip'), $(this).data('heatModeValue'))
+    })
+
+    $('#poolHeatMode').on('click', 'input', function () {
+        setHeatMode($('#poolHeatMode').data('equip'), $(this).data('heatModeValue'))
+    })
+
 
 
     $('#switchToConfig').click(function () {
@@ -83,21 +98,22 @@ $(function () {
 
         if (data != null) {
             $('#config').html('Time #: ' + data.TIME +
-                '<br>Water Temp: ' + data.waterTemp +
-                '<br>Temp 2(?): ' + data.temp2 +
+                '<br>Water Temp: ' + data.poolTemp +
+                '<br>Temp 2(?): ' + data.spaTemp +
                 '<br>Air Temp: ' + data.airTemp +
                 '<br>Solar Temp: ' + data.solarTemp +
+                '<br>Unknown?: ' + data.poolHeatMode2 +
+                '<br>Unknown?: ' + data.spaHeatMode2 +
                 '<br>Pool Heat Mode: ' + data.poolHeatMode +
                 '<br>Spa Heat Mode: ' + data.spaHeatMode +
-                '<br>Pool Heat Mode2 (?): ' + data.poolHeatMode2 +
-                '<br>Spa Heat Mode2 (?): ' + data.spaHeatMode2 +
                 '<br>Valve: ' + data.valves +
                 '<br>Run Mode: ' + data.runmode +
                 '<br>Unit of Measure: ' + data.UOM +
                 '<br>Heater Active(?): ' + data.HEATER_ACTIVE +
-                '<p>')
+                '<p>');
+            $('#poolCurrentTemp').html('Pool Temp: ' + data.poolTemp);
+            $('#spaCurrentTemp').html('Spa Temp: ' + data.spaTemp);
         }
-
 
         //$config.append(JSON.stringify(data))
 
@@ -139,12 +155,41 @@ $(function () {
         //console.log('received' + JSON.stringify(data))
 
 
-        $('#poolHeatSetPoint').html('Temp: ' + data.POOLSETPOINT)
-        $('#spaHeatSetPoint').html('Temp: ' + data.SPASETPOINT)
+        $('#poolHeatSetPoint').html('Temp Set point: ' + data.poolSetPoint)
+        $('#poolHeatSetPoint').append('<button id="poolsetpointplusone">+1</button>')
+        $('#poolHeatSetPoint').append('<button id="poolsetpointminusone">-1</button>')
+        $('#poolsetpointplusone').data('equip', 'pool');
+        $('#poolsetpointplusone').data('adjust', 1);
+        $('#poolsetpointminusone').data('equip', 'pool');
+        $('#poolsetpointminusone').data('adjust', -1);
+        $('#spaHeatSetPoint').html('Temp Set point: ' + data.spaSetPoint)
+        $('#spaHeatSetPoint').append('<button id="spasetpointplusone">+1</button>')
+        $('#spaHeatSetPoint').append('<button id="spasetpointminusone">-1</button>')
+        $('#spasetpointplusone').data('equip', 'spa');
+        $('#spasetpointplusone').data('adjust', 1);
+        $('#spasetpointminusone').data('equip', 'spa');
+        $('#spasetpointminusone').data('adjust', -1);
+
+        $('#spaHeatMode').data('spaHeatMode', data.spaHeatMode)
+        $('#spaHeatMode').data('equip', "spa")
+        $('#poolHeatMode').data('poolHeatMode', data.poolHeatMode)
+        $('#poolHeatMode').data('equip', "pool")
+
+        $('#poolHeatModeOff').data('heatModeValue', 0);
+        $('#poolHeatModeHeater').data('heatModeValue', 1);
+        $('#poolHeatModeSolarPref').data('heatModeValue', 2);
+        $('#poolHeatModeSolarOnly').data('heatModeValue', 3);
+
+        $('#spaHeatModeOff').data('heatModeValue', 0);
+        $('#spaHeatModeHeater').data('heatModeValue', 1);
+        $('#spaHeatModeSolarPref').data('heatModeValue', 2);
+        $('#spaHeatModeSolarOnly').data('heatModeValue', 3);
 
 
-        switch (data.POOLHEATMODE) {
-        case "Off":
+
+
+        switch (data.poolHeatMode) {
+        case 0: //Off
             {
                 $('#poolHeatModeOff').prop('checked', true);
                 $('#poolHeatModeHeater').prop('checked', false);
@@ -152,7 +197,7 @@ $(function () {
                 $('#poolHeatModeSolarOnly').prop('checked', false);
                 break;
             }
-        case "Heater":
+        case 1: //Heater
             {
                 $('#poolHeatModeOff').prop('checked', false);
                 $('#poolHeatModeHeater').prop('checked', true);
@@ -160,7 +205,7 @@ $(function () {
                 $('#poolHeatModeSolarOnly').prop('checked', false);
                 break;
             }
-        case "Solar Pref":
+        case 2: //Solar Pref
             {
                 $('#poolHeatModeOff').prop('checked', false);
                 $('#poolHeatModeHeater').prop('checked', false);
@@ -168,7 +213,7 @@ $(function () {
                 $('#poolHeatModeSolarOnly').prop('checked', false);
                 break;
             }
-        case "Solar Only":
+        case 3: //Solar Only
             {
                 $('#poolHeatModeOff').prop('checked', false);
                 $('#poolHeatModeHeater').prop('checked', false);
@@ -180,8 +225,8 @@ $(function () {
         }
 
 
-        switch (data.SPAHEATMODE) {
-        case "Off":
+        switch (data.spaHeatMode) {
+        case 0: //Off
             {
                 $('#spaHeatModeOff').prop('checked', true);
                 $('#spaHeatModeHeater').prop('checked', false);
@@ -189,7 +234,7 @@ $(function () {
                 $('#spaHeatModeSolarOnly').prop('checked', false);
                 break;
             }
-        case "Heater":
+        case 1: //Heater
             {
                 $('#spaHeatModeOff').prop('checked', false);
                 $('#spaHeatModeHeater').prop('checked', true);
@@ -197,7 +242,7 @@ $(function () {
                 $('#spaHeatModeSolarOnly').prop('checked', false);
                 break;
             }
-        case "Solar Pref":
+        case 2: //Solar Pref
             {
                 $('#spaHeatModeOff').prop('checked', false);
                 $('#spaHeatModeHeater').prop('checked', false);
@@ -205,23 +250,17 @@ $(function () {
                 $('#spaHeatModeSolarOnly').prop('checked', false);
                 break;
             }
-        case "Solar Only":
+        case 3: //Solar Only
             {
                 $('#spaHeatModeOff').prop('checked', false);
                 $('#spaHeatModeHeater').prop('checked', false);
                 $('#spaHeatModeSolarPref').prop('checked', false);
                 $('#spaHeatModeSolarOnly').prop('checked', true);
             }
-
-
         }
-
-
-
     }
 
     function addCircuit(data) {
-        //if (!data) alert("reload page.  pool data not ready")
 
         var i = 1;
         for (i; i < 21; i++) {
@@ -233,19 +272,8 @@ $(function () {
                     if ((i != 10) || (i != 19)) {
 
                         if (document.getElementById(data[i].numberStr)) {
-
-
-
-
                             $('#' + data[i].numberStr).prop('checked', data[i].status == "on" ? true : false);
-
-
-
                         } else {
-
-
-                            //$('#status').append('<p  class="status2" id="' + data[i].numberStr + '">' + data[i].name + '</p>');
-
 
                             var checked = ""
                             if (data[i].status == "on") {
@@ -264,8 +292,6 @@ $(function () {
                             $whichDiv.append('<br>' + data[i].name + '<input type="checkbox" name="' + data[i].numberStr + '" id="' + data[i].numberStr + '" />');
                             $('#' + data[i].numberStr).data(data[i].numberStr, data[i].number)
                         }
-
-                        //$status.show();
                     }
                 }
             }
@@ -276,12 +302,19 @@ $(function () {
 
     // Socket events
 
+    function setHeatSetPoint(equip, change) {
+        socket.emit('setHeatSetPoint', equip, change)
+    }
+
+
+    function setHeatMode(equip, change) {
+        socket.emit('setHeatMode', equip, change)
+    }
+
+    
     function setEquipmentStatus(equipment) {
         socket.emit('toggleCircuit', equipment)
-            //There is a problem here with some names, like 'WtrFall 1.5'.  The . is a problem.
-
     };
-    // Whenever the server emits 'status', update the page
 
     socket.on('circuit', function (data) {
         //console.log(data)

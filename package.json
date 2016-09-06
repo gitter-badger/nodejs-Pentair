@@ -22,7 +22,7 @@
   "dependencies": {
     "dateformat": "^1.0.12",
     "express": "^4.14.0",
-    "serialport": "^3.1.2",
+    "serialport": "^4.0.1",
     "socket.io": "^1.4.8",
     "winston": "^2.2.0"
   }

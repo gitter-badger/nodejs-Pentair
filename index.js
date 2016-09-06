@@ -8,8 +8,8 @@ console.log('\033[2J'); //clear the console
 var dateFormat = require('dateformat');
 
 const serialport = require("serialport");
-var SerialPort = serialport.SerialPort;
-var sp = new SerialPort("/dev/ttyUSB0", {
+//var SerialPort = serialport.SerialPort;
+var sp = new serialport("/dev/ttyUSB0", {
     baudrate: 9600,
     databits: 8,
     parity: 'none',
@@ -24,7 +24,7 @@ var currentStatusBytes; //persistent variable to hold full bytes of pool status
 var currentWhatsDifferent; //persistent variable to hold what's different
 var currentCircuitArrObj; //persistent variable to hold circuit info
 var currentPumpStatus; //persistent variable to hold pump information
-var currentHeatSetPoint; //persistent variable to heald heat set points
+var currentHeat; //persistent variable to heald heat set points
 var currentSchedule = ["blank", {}]; //schedules
 
 var instruction = ''; //var to hold potential chatter instructions
@@ -85,8 +85,8 @@ const controllerStatusPacketFields = {
     UOM: 13, //Celsius (4) or Farenheit (0); Also Service/Timeout.  See strRunMode below.
     VALVES: 14,
     UNKNOWN: 17, //Something to do with heat.
-    WATER_TEMP: 18,
-    TEMP_2: 19,
+    POOL_TEMP: 18,
+    SPA_TEMP: 19,
     HEATER_ACTIVE: 20, //0=off.  32=on.  More here?
     AIR_TEMP: 22,
     SOLAR_TEMP: 23,
@@ -332,12 +332,35 @@ const strValves = {
     48: 'Heater' // I've seen the value of 51.  I think it is Pool + Heater.  Need to investigate.
 }
 
-const heatMode = {
+const heatModeStr = {
     //Pentair controller sends the pool and spa heat status as a 4 digit binary byte from 0000 (0) to 1111 (15).  The left two (xx__) is for the spa and the right two (__xx) are for the pool.  EG 1001 (9) would mean 10xx = 2 (Spa mode Solar Pref) and xx01 = 1 (Pool mode Heater)
-    0: 'Off',
+    //0: all off
+    //1: Pool heater            Spa off
+    //2: Pool Solar Pref        Spa off
+    //3: Pool Solar Only        Spa off
+    //4: Pool Off               Spa Heater
+    //5: Pool Heater            Spa Heater
+    //6: Pool Solar Pref        Spa Heater
+    //7: Pool Solar Only        Spa Heater
+    //8: Pool Off               Spa Solar Pref
+    //9: Pool Heater            Spa Solar Pref
+    //10: Pool Solar Pref       Spa Solar Pref                 
+    //11: Pool Solar Only       Spa Solar Pref
+    //12: Pool Off              Spa Solar Only
+    //13: Pool Heater           Spa Solar Only
+    //14: Pool Solar Pref       Spa Solar Only
+    //15: Pool Solar Only       Spa Solar Only
+    0: 'OFF',
     1: 'Heater',
     2: 'Solar Pref',
     3: 'Solar Only'
+}
+
+const heatMode = {
+    OFF: 0,
+    HEATER: 1,
+    SOLARPREF: 2,
+    SOLARONLY: 3
 }
 
 const ctrl = {
@@ -448,7 +471,15 @@ var circuit20 = new circuit();
 //array of circuit objects.  Since Pentair uses 1-20, we'll just use a placeholder for the 1st [0] element in the array
 var currentCircuitArrObj = ['blank', circuit1, circuit2, circuit3, circuit4, circuit5, circuit6, circuit7, circuit8, circuit9, circuit10, circuit11, circuit12, circuit13, circuit14, circuit15, circuit16, circuit17, circuit18, circuit19, circuit20];
 
-
+function heatObj(poolSetPoint, poolHeatMode, spaSetPoint, spaHeatMode) {
+    this.poolSetPoint = poolSetPoint;
+    this.poolHeatMode = poolHeatMode;
+    this.poolHeatModeStr = heatModeStr[poolHeatMode]
+    this.spaSetPoint = spaSetPoint;
+    this.spaHeatMode = spaHeatMode;
+    this.spaHeatModeStr = heatModeStr[spaHeatMode]
+}
+var currentHeat = new heatObj;
 
 
 // This one should be removed once all instances are cleaned up and moved the the object directly above this.
@@ -497,8 +528,6 @@ var currentPumpStatus = ['blank', pump1, pump2]
 var currentPumpStatusPacket = ['blank', [], []]; // variable to hold the status packets of the pumps
 
 
-
-
 var introMsg = '\n*******************************';
 introMsg += '\n Important:';
 introMsg += '\n Configuration is now read from your pool.  The application will send the commands to retrieve the custom names and circuit names.';
@@ -506,7 +535,7 @@ introMsg += '\n It will dynamically load as the information is parsed.';
 introMsg += '\n Visit http://_your_machine_name_:3000 to see a basic UI';
 introMsg += '\n Visit http://_your_machine_name_:3000/debug.html for a way to listen for specific messages\n\n';
 introMsg += '*******************************'
-logger.warn(introMsg)
+logger.info(introMsg)
 
 var queuePacketsArr = []; //array to hold messages to send
 
@@ -546,16 +575,15 @@ function countObjects(obj) {
 
 
 
-
-
+sp.on('error', function (err) {
+    return logger.error('Error opening port: ', err.message)
+})
 
 
 sp.on('open', function () {
     logger.verbose('Serial Port opened');
-    logger.verbose('Queueing messages to retrieve Custome Names and Circuit Names');
 
     getConfiguration();
-    logger.verbose('Done queueing messages to retrieve Custom Names and Circuit Names')
 
     sp.on('data', function (data) {
 
@@ -783,13 +811,13 @@ function printStatus(data1, data2) {
     }
 
 
-    header = '';
-    header += (spacepadding + '      S       L                                           V           H   W       H       A   S           H\n');
-    header += (spacepadding + '      O       E           M   M   M                       A           T   T       T       I   O           E\n');
-    header += (spacepadding + '  D   U       N   H       O   O   O                   U   L           R   R   T   R       R   L           A                           C   C\n');
-    header += (spacepadding + '  E   R   C   G   O   M   D   D   D                   O   V           M   T   M   _       T   T           T                           H   H\n');
-    header += (spacepadding + '  S   C   M   T   U   I   E   E   E                   M   E           D   M   P   O       M   M           M                           K   K\n');
-    header += (spacepadding + '  T   E   D   H   R   N   1   2   3                       S           E   P   2   N       P   P           D                           H   L\n');
+    header = '\n';
+    header += (spacepadding + '      S       L                                           V           H   P   S   H       A   S           H\n');
+    header += (spacepadding + '      O       E           M   M   M                       A           T   OO  P   T       I   O           E\n');
+    header += (spacepadding + '  D   U       N   H       O   O   O                   U   L           R   L   A   R       R   L           A                           C   C\n');
+    header += (spacepadding + '  E   R   C   G   O   M   D   D   D                   O   V           M   T   T   _       T   T           T                           H   H\n');
+    header += (spacepadding + '  S   C   M   T   U   I   E   E   E                   M   E           D   M   M   O       M   M           M                           K   K\n');
+    header += (spacepadding + '  T   E   D   H   R   N   1   2   3                       S           E   P   P   N       P   P           D                           H   L\n');
     //                    e.g.  15, 16,  2, 29, 11, 33, 32,  0,  0,  0,  0,  0,  0,  0, 51,  0, 64,  4, 79, 79, 32,  0, 69,102,  0,  0,  7,  0,  0,182,215,  0, 13,  4,186
 
 
@@ -876,15 +904,15 @@ function decode(data, counter, responseBool) {
                 }
 
                 status.time = timeStr;
-                status.waterTemp = data[controllerStatusPacketFields.WATER_TEMP];
-                status.temp2 = data[controllerStatusPacketFields.TEMP_2];
+                status.poolTemp = data[controllerStatusPacketFields.POOL_TEMP];
+                status.spaTemp = data[controllerStatusPacketFields.SPA_TEMP];
                 status.airTemp = data[controllerStatusPacketFields.AIR_TEMP];
                 status.solarTemp = data[controllerStatusPacketFields.SOLAR_TEMP];
-                status.poolHeatMode = heatMode[data[controllerStatusPacketFields.UNKNOWN] & 3]; //mask the data[6] with 0011
-                status.spaHeatMode = heatMode[(data[controllerStatusPacketFields.UNKNOWN] & 12) >> 2]; //mask the data[6] with 1100 and shift right two places
+                status.poolHeatMode2 = heatModeStr[data[controllerStatusPacketFields.UNKNOWN] & 3]; //mask the data[6] with 0011
+                status.spaHeatMode2 = heatModeStr[(data[controllerStatusPacketFields.UNKNOWN] & 12) >> 2]; //mask the data[6] with 1100 and shift right two places
 
-                status.poolHeatMode2 = heatMode[data[controllerStatusPacketFields.HEATER_MODE] & 3]; //mask the data[6] with 0011
-                status.spaHeatMode2 = heatMode[(data[controllerStatusPacketFields.HEATER_MODE] & 12) >> 2]; //mask the data[6] with 1100 and shift right two places
+                status.poolHeatMode = heatModeStr[data[controllerStatusPacketFields.HEATER_MODE] & 3]; //mask the data[6] with 0011
+                status.spaHeatMode = heatModeStr[(data[controllerStatusPacketFields.HEATER_MODE] & 12) >> 2]; //mask the data[6] with 1100 and shift right two places
 
                 status.valves = strValves[data[controllerStatusPacketFields.VALVES]];
                 status.runmode = strRunMode[data[controllerStatusPacketFields.UOM] & 129]; // more here?
@@ -1000,7 +1028,135 @@ function decode(data, counter, responseBool) {
             }
 
 
+        case 7:
 
+            //Send request/response for pump status
+            {
+                if (data[packetFields.FROM] == 16) //Request of status from Main
+                {
+                    if (logPumpMessages) {
+                        logger.verbose('Msg# %s   Main asking pump %s for status: %s', counter, ctrlString[data[packetFields.DEST]], JSON.stringify(data));
+
+                    }
+                } else //Response to request for status 
+                {
+                    var status = new pump();
+
+
+                    if (data[packetFields.FROM] == 96) {
+                        status.pump = 1;
+
+                    } else if (data[packetFields.FROM] == 97) {
+                        status.pump = 2
+                    } else {
+                        logger.warn('Msg# %s   Asking for status of unknown pump: ', counter, data)
+                    }
+                    var pumpname = (data[packetFields.FROM]).toString(); //returns 96 (pump1) or 97 (pump2)
+                    //time returned in HH:MM (24 hour)  <-- need to clean this up so we don't get times like 5:3
+
+                    status.time = data[pumpPacketFields.HOUR] + ':' + data[pumpPacketFields.MIN];
+                    status.run = data[pumpPacketFields.CMD]
+                    status.name = ctrlString[pumpname];
+                    status.mode = data[pumpPacketFields.MODE]
+                    status.drivestate = data[pumpPacketFields.DRIVESTATE]
+                    status.watts = (data[pumpPacketFields.WATTSH] * 256) + data[pumpPacketFields.WATTSL]
+                    status.rpm = (data[pumpPacketFields.RPMH] * 256) + data[pumpPacketFields.RPML]
+                    status.ppc = data[pumpPacketFields.PPC]
+                    status.err = data[pumpPacketFields.ERR]
+                    status.timer = data[pumpPacketFields.TIMER]
+                        //status.packet = data;
+
+                    if (logPumpMessages) logger.debug('Msg# %s  %s Status: ', counter, status.name, JSON.stringify(status), data);
+
+
+
+                    if (logPumpMessages) logger.silly('currentPumpStatusPacket', currentPumpStatusPacket)
+
+                    if (status.pump == 1 || status.pump == 2) {
+
+                        //pump status has not been copied to currentPumpStatus yet 
+                        if (currentPumpStatus[status.pump].name == undefined) {
+                            currentPumpStatus[status.pump] = status;
+                            currentPumpStatusPacket[status.pump] = data;
+                        } else
+                        //if the packets are different
+                        {
+
+                            if (logPumpMessages) logger.silly('currentPumpPacket:  %s  \n Data:  %s', currentPumpStatusPacket[status.pump], data)
+                                //if (logPumpMessages) logger.silly('currentPumpStatusPacket[status.pump] == data', currentPumpStatusPacket[status.pump] == data)
+                                //if (logPumpMessages) logger.silly('JSON.stringify(currentPumpStatusPacket[status.pump]) == JSON.stringify(data)', JSON.stringify(currentPumpStatusPacket[status.pump]) == JSON.stringify(data))
+
+
+                            if (JSON.stringify(currentPumpStatusPacket[status.pump]) == JSON.stringify(data)) {
+
+                                logger.debug('Msg# %s   Pump %s status has not changed: ', counter, status.pump, data)
+                            } else {
+
+                                if (logPumpMessages) logger.silly('currentPumpStatus: ', currentPumpStatus[status.pump], 'status: ', status)
+
+                                if (logPumpMessages) logger.info('Msg# %s   Pump %s status changed: ', counter, status.pump, currentPumpStatus[status.pump].whatsDifferent(status));
+
+                                currentPumpStatus[status.pump] = status;
+                                currentPumpStatusPacket[status.pump] = data;
+                                emit();
+                            }
+                        }
+                    }
+
+
+
+                }
+                decoded = true;
+                break;
+            }
+        case 8: //Broadcast current heat set point and mode 
+            {
+                //   [15,16,8,13,75,75,64,87,101,11,0,0,62,0,0,0,0,2,190]
+
+                var status = new heatObj(data[7], data[9] & 3, data[8], (data[9] & 12) >> 2)
+
+                logger.debug('heat status ', status, data);
+
+                logger.debug('currentHeat ', currentHeat)
+
+                if (currentHeat.poolSetPoint == undefined) {
+                    currentHeat = status;
+                    logger.info('Msg# %s   Pool/Spa heat set point discovered:  \n  Pool heat mode: %s @ %s degrees \n  Spa heat mode %s at %s degrees', counter, heatModeStr[currentHeat.poolHeatMode], currentHeat.poolSetPoint, heatModeStr[currentHeat.spaHeatMode], currentHeat.spaSetPoint);
+                } else {
+
+                    if (currentHeat.equals(status)) {
+                        logger.debug('Msg# %s   Pool/Spa heat set point HAS NOT CHANGED:  pool heat mode: %s @ %s degrees; spa heat mode %s at %s degrees', counter, heatModeStr[status.poolHeatMode], status.poolSetPoint, heatModeStr[status.spaHeatMode], status.spaSetPoint);
+                    } else {
+                        logger.verbose('Msg# %s   Pool/Spa heat set point changed:  pool heat mode: %s @ %s degrees; spa heat mode %s at %s degrees', counter, heatModeStr[status.poolHeatMode], status.poolSetPoint, heatModeStr[status.spaHeatMode], status.spaSetPoint);
+                        logger.info('Msg# %s  Change in Pool/Spa Heat Mode:  %s', counter, currentHeat.whatsDifferent(status))
+                        currentHeat = status;
+                        emit();
+                    }
+                }
+
+                decoded = true;
+                break;
+            }
+
+            /*            case 8: //Get Heat/Temp Setpoints
+                    {
+
+                        var status = {};
+
+                        status.POOLSETPOINT = data[4];
+                        status.SPASETPOINT = data[5];
+                        status.POOLHEATMODE = 
+                        status.SPAHEATMODE = (data[6] & 12) >> 2; //mask the data[6] with 1100 and shift right two places
+                        logger.debug('Msg# %s   Pool/Spa heat set point HAS NOT CHANGED:  pool heat mode: %s @ %s degrees; spa heat mode %s at %s degrees', counter, status.POOLHEATMODE, status.POOLSETPOINT, status.SPAHEATMODE, status.SPASETPOINT);
+                        if (currentHeat != status) {
+                            currentHeat = status;
+                            logger.verbose('Msg# %s   Pool/Spa heat set point changed:  pool heat mode: %s @ %s degrees; spa heat mode %s at %s degrees', counter, status.POOLHEATMODE, status.POOLSETPOINT, status.SPAHEATMODE, status.SPASETPOINT);
+                            emit();
+                        }
+                        decoded = true;
+                        break;
+                    }
+            */
         case 10: //Get Custom Names
             {
                 var customName = '';
@@ -1021,7 +1177,7 @@ function decode(data, counter, responseBool) {
 
                 //display custom names when we reach the last circuit
                 if (data[4] == 9) {
-                    logger.info('\n  Custom Circuit Names retrieved from configuration: \n [%s]\n ', customNameArr)
+                    logger.info('\n  Custom Circuit Names retrieved from configuration: ', customNameArr)
                 }
 
                 emit();
@@ -1029,23 +1185,7 @@ function decode(data, counter, responseBool) {
                 break;
             }
 
-        case 8: //Get Heat/Temp Setpoints
-            {
 
-                var status = {};
-
-                status.POOLSETPOINT = data[4];
-                status.SPASETPOINT = data[5];
-                status.POOLHEATMODE = heatMode[data[6] & 3]; //mask the data[6] with 0011
-                status.SPAHEATMODE = heatMode[(data[6] & 12) >> 2]; //mask the data[6] with 1100 and shift right two places
-                logger.verbose('Msg# %s   Pool/Spa heat set point:  pool heat mode: %s @ %s degrees; spa heat mode %s at %s degrees', counter, status.POOLHEATMODE, status.POOLSETPOINT, status.SPAHEATMODE, status.SPASETPOINT);
-
-                currentHeatSetPoint = status;
-                //logger.warn('***********' + JSON.stringify(currentHeatSetPoint))
-                emit();
-                decoded = true;
-                break;
-            }
 
         case 11: // Get Circuit Names
             {
@@ -1213,52 +1353,41 @@ function decode(data, counter, responseBool) {
             //This is _SET_ heat/temp... not the response.
         case 136:
             {
+                //  [16,34,136,4,POOL HEAT,SPA HEAT,Heat Mode,0,2,56]
 
-                if (data[packetFields.DEST] == ctrl.MAIN) {
-                    var status = {
+                var status = {
 
-                        source: null,
-                        destination: null,
-                        b3: null,
-                        CMD: null,
-                        sFeature: null,
-                        ACTION: null,
-                        b7: null
-
-                    }
-                    status.source = data[packetFields.FROM]
-                    status.destination = data[packetFields.DEST]
-                    status.b3 = data[2] //134... always?
-                    status.CMD = data[3] == 4 ? 'pool temp' : 'feature'; // either 4=pool temp or 2=feature
-
-
-
-
-                    if (data[3] == 4) {
-                        status.POOLSETPOINT = data[4];
-                        status.SPASETPOINT = data[5];
-                        status.POOLHEATMODE = heatMode[data[6] & 3]; //mask the data[6] with 0011
-                        status.SPAHEATMODE = heatMode[(data[6] & 12) >> 2]; //mask the data[6] with 1100 and shift right two places
-                        logger.info('Msg# %s   %s asking %s to change pool heat mode to %s (@ %s degrees) & spa heat mode to %s (at %s degrees): %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], status.POOLHEATMODE, status.POOLSETPOINT, status.SPAHEATMODE, status.SPASETPOINT, JSON.stringify(data));
-
-
-
-                        decoded = true;
-                        break;
-                    }
-
+                    source: null,
+                    destination: null,
+                    b3: null,
+                    CMD: null,
+                    sFeature: null,
+                    ACTION: null,
+                    b7: null
 
                 }
+                status.source = data[packetFields.FROM]
+                status.destination = data[packetFields.DEST]
+
+                status.POOLSETPOINT = data[4];
+                status.SPASETPOINT = data[5];
+                status.POOLHEATMODE = heatModeStr[data[6] & 3]; //mask the data[6] with 0011
+                status.SPAHEATMODE = heatModeStr[(data[6] & 12) >> 2]; //mask the data[6] with 1100 and shift right two places
+                logger.info('Msg# %s   %s asking %s to change pool heat mode to %s (@ %s degrees) & spa heat mode to %s (at %s degrees): %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], status.POOLHEATMODE, status.POOLSETPOINT, status.SPAHEATMODE, status.SPASETPOINT, JSON.stringify(data));
+
+                decoded = true;
+                break;
+
             }
         default:
             {
 
                 var currentAction = strActions[data[packetFields.ACTION]]
                 if (currentAction != undefined) {
-                    logger.verbose('Msg# %s   %s packet: %s', counter, currentAction, data)
+                    if (logConsoleNotDecoded) logger.verbose('Msg# %s   %s packet: %s', counter, currentAction, data)
                     decoded = true;
                 } else {
-                    logger.verbose(('Msg# %s   is NOT DEFINED packet: %s', counter, data))
+                    if (logConsoleNotDecoded) logger.info(('Msg# %s   is NOT DEFINED packet: %s', counter, data))
                 }
 
             }
@@ -1281,165 +1410,107 @@ function decode(data, counter, responseBool) {
         //var isResponse = data.isResponse(instruction);
         var ctrlType = data2;
 
-        //Send request/response for pump status
-        if (data[packetFields.ACTION] == 7) {
-            if (data[packetFields.FROM] == 16) //Request of status from Main
+
+        switch (data[packetFields.ACTION]) {
+
+
+
+
+        case 4: //Pump control panel on/off
             {
-                if (logPumpMessages) {
-                    logger.verbose('Msg# %s   Main asking pump %s for status: %s', counter, ctrlString[data[packetFields.DEST]], JSON.stringify(data));
-                }
-            } else //Response to request for status 
-            {
-                var status = new pump();
-
-
-                if (data[packetFields.FROM] == 96) {
-                    status.pump = 1;
-
-                } else if (data[packetFields.FROM] == 97) {
-                    status.pump = 2
-                } else {
-                    logger.warn('Msg# %s   Asking for status of unknown pump: ', counter, data)
-                }
-                var pumpname = (data[packetFields.FROM]).toString(); //returns 96 (pump1) or 97 (pump2)
-                //time returned in HH:MM (24 hour)  <-- need to clean this up so we don't get times like 5:3
-
-                status.time = data[pumpPacketFields.HOUR] + ':' + data[pumpPacketFields.MIN];
-                status.run = data[pumpPacketFields.CMD]
-                status.name = ctrlString[pumpname];
-                status.mode = data[pumpPacketFields.MODE]
-                status.drivestate = data[pumpPacketFields.DRIVESTATE]
-                status.watts = (data[pumpPacketFields.WATTSH] * 256) + data[pumpPacketFields.WATTSL]
-                status.rpm = (data[pumpPacketFields.RPMH] * 256) + data[pumpPacketFields.RPML]
-                status.ppc = data[pumpPacketFields.PPC]
-                status.err = data[pumpPacketFields.ERR]
-                status.timer = data[pumpPacketFields.TIMER]
-                    //status.packet = data;
-
-                if (logPumpMessages) logger.debug('Msg# %s  %s Status: ', counter, status.name, JSON.stringify(status), data);
-
-
-
-                if (logPumpMessages) logger.silly('currentPumpStatusPacket', currentPumpStatusPacket)
-
-                if (status.pump == 1 || status.pump == 2) {
-
-                    //pump status has not been copied to currentPumpStatus yet 
-                    if (currentPumpStatus[status.pump].name == undefined) {
-                        currentPumpStatus[status.pump] = status;
-                        currentPumpStatusPacket[status.pump] = data;
-                    } else
-                    //if the packets are different
-                    {
-
-                        if (logPumpMessages) logger.silly('currentPumpPacket:  %s  \n Data:  %s', currentPumpStatusPacket[status.pump], data)
-                            //if (logPumpMessages) logger.silly('currentPumpStatusPacket[status.pump] == data', currentPumpStatusPacket[status.pump] == data)
-                            //if (logPumpMessages) logger.silly('JSON.stringify(currentPumpStatusPacket[status.pump]) == JSON.stringify(data)', JSON.stringify(currentPumpStatusPacket[status.pump]) == JSON.stringify(data))
-
-
-                        if (JSON.stringify(currentPumpStatusPacket[status.pump]) == JSON.stringify(data)) {
-
-                            logger.debug('Msg# %s   Pump %s status has not changed: ', counter, status.pump, data)
-                        } else {
-
-                            if (logPumpMessages) logger.silly('currentPumpStatus: ', currentPumpStatus[status.pump], 'status: ', status)
-
-                            if (logPumpMessages) logger.info('Msg# %s   Pump %s status changed: ', counter, status.pump, currentPumpStatus[status.pump].whatsDifferent(status));
-
-                            currentPumpStatus[status.pump] = status;
-                            currentPumpStatusPacket[status.pump] = data;
-                        }
+                if (data[pumpPacketFields.CMD] == 255) //Set pump control panel off (Main panel control only)
+                {
+                    if (!responseBool) {
+                        if (logPumpMessages & loglevel) logger.verbose('Msg# %s   %s asking %s for remote control (turn off pump control panel): %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], JSON.stringify(data));
+                        decoded = true;
+                    } else {
+                        if (logPumpMessages && loglevel) logger.verbose('Msg# %s   %s confirming it is in remote control: %s', counter, ctrlString[data[packetFields.FROM]], JSON.stringify(data))
+                        decoded = true;
+                    }
+                } else
+                if (data[pumpPacketFields.CMD] == 0) //Set pump control panel on 
+                {
+                    if (!responseBool) {
+                        if (logPumpMessages && loglevel) logger.verbose('Msg# %s   %s asking %s for local control (turn on pump control panel): %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], JSON.stringify(data))
+                        decoded = true;
+                    } else {
+                        if (logPumpMessages && loglevel) logger.verbose('Msg# %s   %s confirming it is in local control: %s', counter, ctrlString[data[packetFields.FROM]], JSON.stringify(data))
+                        decoded = true;
                     }
                 }
-
-                emit();
-                decoded = true;
+                break;
             }
-        } else
 
-        if (data[packetFields.ACTION] == 4) //Pump control panel on/off
-        {
-            if (data[pumpPacketFields.CMD] == 255) //Set pump control panel off (Main panel control only)
+        case 1: //Write command to pump
             {
-                if (!responseBool) {
-                    if (logPumpMessages & loglevel) logger.verbose('Msg# %s   %s asking %s for remote control (turn off pump control panel): %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], JSON.stringify(data));
+                if (data[pumpPacketFields.LENGTH] == 4) //This might be the only packet where isResponse() won't work because the pump sends back a validation command
+                {
+                    var pumpCommand = '';
+                    for (var i = 1; i < data[packetFields.LENGTH]; i++) {
+                        pumpCommand += data[i + packetFields.LENGTH] //Not sure if it is a coincidence that pumpPacketFields.LENGTH ==4, but the 4th byte is the start of the message.
+                        pumpCommand += ', '
+                    }
+
+                    if (logPumpMessages && loglevel) logger.verbose('Msg# %s   %s asking %s to write a _%s_ command: %s', counter, ctrlString[data[pumpPacketFields.FROM]], ctrlString[data[packetFields.DEST]], pumpCommand, JSON.stringify(data));
                     decoded = true;
                 } else {
-                    if (logPumpMessages && loglevel) logger.verbose('Msg# %s   %s confirming it is in remote control: %s', counter, ctrlString[data[packetFields.FROM]], JSON.stringify(data))
+                    var pumpResponse = ''
+                    pumpResponse += data[pumpPacketFields.LENGTH + 1] + ', ' + data[pumpPacketFields.LENGTH + 2]
+                    if (logPumpMessages && loglevel) logger.verbose('Msg# %s   %s sent response _%s_ to write command: %s', counter, ctrlString[data[packetFields.FROM]], pumpResponse, JSON.stringify(data));
                     decoded = true;
                 }
+                break;
             }
-            if (data[pumpPacketFields.CMD] == 0) //Set pump control panel on 
+
+
+        case 5: //Set pump mode
             {
                 if (!responseBool) {
-                    if (logPumpMessages && loglevel) logger.verbose('Msg# %s   %s asking %s for local control (turn on pump control panel): %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], JSON.stringify(data))
+                    if (logPumpMessages && loglevel) logger.verbose('Msg# %s   %s asking %s to set pump mode to _%s_: %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], data[pumpPacketFields.CMD], JSON.stringify(data));
                     decoded = true;
                 } else {
-                    if (logPumpMessages && loglevel) logger.verbose('Msg# %s   %s confirming it is in local control: %s', counter, ctrlString[data[packetFields.FROM]], JSON.stringify(data))
+                    if (logPumpMessages && loglevel) logger.verbose('Msg# %s   %s confirming it is in mode _%s_: %s', counter, ctrlString[data[packetFields.FROM]], data[packetFields.CMD], JSON.stringify(data));
                     decoded = true;
                 }
+                break;
             }
-        } else if (data[packetFields.ACTION] == 1) //Write command to pump
-        {
-            if (data[pumpPacketFields.LENGTH] == 4) //This might be the only packet where isResponse() won't work because the pump sends back a validation command
+        case 6: //Set run mode
             {
-                var pumpCommand = '';
-                for (var i = 1; i < data[packetFields.LENGTH]; i++) {
-                    pumpCommand += data[i + packetFields.LENGTH] //Not sure if it is a coincidence that pumpPacketFields.LENGTH ==4, but the 4th byte is the start of the message.
-                    pumpCommand += ', '
+                if (!responseBool) {
+                    if (logPumpMessages && loglevel) logger.verbose('Msg# %s   %s asking %s to set run to _%s_: %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], data[packetFields.CMD], JSON.stringify(data));
+                    decoded = true;
+                } else {
+                    if (logPumpMessages && loglevel) logger.verbose('Msg# %s   %s confirming it is in run _%s_: %s', counter, ctrlString[data[packetFields.FROM]], data[pumpPacketFields.CMD], JSON.stringify(data));
+                    decoded = true;
                 }
-
-                if (logPumpMessages && loglevel) logger.verbose('Msg# %s   %s asking %s to write a _%s_ command: %s', counter, ctrlString[data[pumpPacketFields.FROM]], ctrlString[data[packetFields.DEST]], pumpCommand, JSON.stringify(data));
-                decoded = true;
-            } else {
-                var pumpResponse = ''
-                pumpResponse += data[pumpPacketFields.LENGTH + 1] + ', ' + data[pumpPacketFields.LENGTH + 2]
-                if (logPumpMessages && loglevel) logger.verbose('Msg# %s   %s sent response _%s_ to write command: %s', counter, ctrlString[data[packetFields.FROM]], pumpResponse, JSON.stringify(data));
+                break;
+            }
+        default:
+            {
+                if (logPumpMessages && loglevel) logger.info('Msg# %s is UNKNOWN: %s', counter, JSON.stringify(data));
                 decoded = true;
             }
-
-
-        } else if (data[packetFields.ACTION] == 5) //Set pump mode
-        {
-            if (!responseBool) {
-                if (logPumpMessages && loglevel) logger.verbose('Msg# %s   %s asking %s to set pump mode to _%s_: %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], data[pumpPacketFields.CMD], JSON.stringify(data));
-                decoded = true;
-            } else {
-                if (logPumpMessages && loglevel) logger.verbose('Msg# %s   %s confirming it is in mode _%s_: %s', counter, ctrlString[data[packetFields.FROM]], data[packetFields.CMD], JSON.stringify(data));
-                decoded = true;
-            }
-
-        } else if (data[packetFields.ACTION] == 6) //Set run mode
-        {
-            if (!responseBool) {
-                if (logPumpMessages && loglevel) logger.verbose('Msg# %s   %s asking %s to set run to _%s_: %s', counter, ctrlString[data[packetFields.FROM]], ctrlString[data[packetFields.DEST]], data[packetFields.CMD], JSON.stringify(data));
-                decoded = true;
-            } else {
-                if (logPumpMessages && loglevel) logger.verbose('Msg# %s   %s confirming it is in run _%s_: %s', counter, ctrlString[data[packetFields.FROM]], data[pumpPacketFields.CMD], JSON.stringify(data));
-                decoded = true;
-            }
-        } else {
-            if (logPumpMessages && loglevel) logger.info('Msg# %s is UNKNOWN: %s', counter, JSON.stringify(data));
-            decoded = true;
+            instruction = data.slice();
         }
-        instruction = data.slice();
+
+
+
+
+        //in case we get here and the first message has not already been set as the instruction command
+        if (instruction == null || instruction == undefined) {
+            instruction = data;
+        }
+        if (!decoded) {
+            if (logConsoleNotDecoded) {
+
+                logger.info('Msg# %s is NOT DECODED %s', counter, JSON.stringify(data));
+
+            };
+        } else {
+            decoded = false
+        }
+        return true; //fix this; turn into callback(?)  What do we want to do with it?
     }
-
-
-
-
-    //in case we get here and the first message has not already been set as the instruction command
-    if (instruction == null || instruction == undefined) {
-        instruction = data;
-    }
-    if (!decoded) {
-        if (logConsoleNotDecoded) {
-
-            logger.info('Msg# %s is NOT DECODED %s', counter, JSON.stringify(data));
-
-        };
-    } else(decoded = false)
-    return true; //fix this; turn into callback(?)  What do we want to do with it?
 }
 
 
@@ -1567,7 +1638,7 @@ function queuePacket(message) {
     }
     var validPacket = (packetchecksum == databytes);
     if (!validPacket) {
-        logger.warn('***Asking to queue malformed packet: %s', packet)
+        logger.error('Asking to queue malformed packet: %s', packet)
     } else {
         queuePacketsArr.push(packet);
         logger.verbose('Just Queued Message to send: %s', packet)
@@ -1758,6 +1829,12 @@ function clone(obj) {
 
 function getConfiguration(callback) {
     sp.drain();
+    logger.verbose('Queueing messages to retrieve Pool/Spa Heat Mode')
+
+    //get Heat Mode
+    queuePacket([165, 10, 16, 34, 200, 1, 0]);
+
+    logger.verbose('Queueing messages to retrieve Custom Names')
 
     var i = 0;
     //get custom names
@@ -1765,20 +1842,22 @@ function getConfiguration(callback) {
         queuePacket([165, 10, 16, 34, 202, 1, i]);
     }
 
-    //get circuit names
+
+    logger.verbose('Queueing messages to retrieve Circuit Names')
+        //get circuit names
     for (i = 1; i < 21; i++) {
         queuePacket([165, 10, 16, 34, 203, 1, i]);
     }
 
-    //get Heat Mode
-    queuePacket([165, 10, 16, 34, 200, 1, 0]);
 
-    //get schedules
+    logger.verbose('Queueing messages to retrieve Schedules')
+        //get schedules
     for (i = 1; i < 13; i++) {
 
         queuePacket([165, 10, 16, 34, 209, 1, i]);
 
     }
+
 
 
 
@@ -1795,9 +1874,9 @@ function emit() {
     io.sockets.emit('pump',
         currentPumpStatus
     );
-    if (currentHeatSetPoint != null) {
+    if (currentHeat != null) {
         io.sockets.emit('heat',
-            currentHeatSetPoint
+            currentHeat
 
         );
     }
@@ -1858,11 +1937,80 @@ app.get('/circuit/:circuit/toggle', function (req, res) {
     res.send(response)
 })
 
-var numUsers = 0;
+
+/*
+    //Pentair controller sends the pool and spa heat status as a 4 digit binary byte from 0000 (0) to 1111 (15).  The left two (xx__) is for the spa and the right two (__xx) are for the pool.  EG 1001 (9) would mean 10xx = 2 (Spa mode Solar Pref) and xx01 = 1 (Pool mode Heater)
+    //0: all off
+    //1: Pool heater            Spa off
+    //2: Pool Solar Pref        Spa off
+    //3: Pool Solar Only        Spa off
+    //4: Pool Off               Spa Heater
+    //5: Pool Heater            Spa Heater
+    //6: Pool Solar Pref        Spa Heater
+    //7: Pool Solar Only        Spa Heater
+    //8: Pool Off               Spa Solar Pref
+    //9: Pool Heater            Spa Solar Pref
+    //10: Pool Solar Pref       Spa Solar Pref                 
+    //11: Pool Solar Only       Spa Solar Pref
+    //12: Pool Off              Spa Solar Only
+    //13: Pool Heater           Spa Solar Only
+    //14: Pool Solar Pref       Spa Solar Only
+    //15: Pool Solar Only       Spa Solar Only
+    0: 'Off',
+    1: 'Heater',
+    2: 'Solar Pref',
+    3: 'Solar Only'
+*/
+
+app.get('/spaheat/setpoint/:spasetpoint', function (req, res) {
+    //  [16,34,136,4,POOL HEAT Temp,SPA HEAT Temp,Heat Mode,0,2,56]
+
+    var updateHeatMode = (currentHeat.spaHeatMode << 2) | currentHeat.poolHeatMode;
+    var updateHeat = [165, 10, 16, 34, 136, 4, currentHeat.poolSetPoint, parseInt(req.params.temp), updateHeatMode, 0]
+    logger.info('User request to update spa set point to %s', req.params.spasetpoint, updateHeat)
+    queuePacket(updateHeat);
+    var response = 'Request to set spa heat setpoint to ' + req.params.spasetpoint + ' sent to controller'
+    res.send(response)
+
+})
+
+
+app.get('/spaheat/mode/:spaheatmode', function (req, res) {
+    var updateHeatMode = (parseInt(req.params.spaheatmode) << 2) | currentHeat.poolHeatMode;
+    var updateHeat = [165, 10, 16, 34, 136, 4, currentHeat.poolSetPoint, currentHeat.spaSetPoint, updateHeatMode, 0]
+    queuePacket(updateHeat);
+    logger.info('User request to update spa heat mode to %s', req.params.spaheatmode, updateHeat)
+    var response = 'Request to set spa heat mode to ' + heatModeStr[req.params.spaheatmode] + ' sent to controller'
+    res.send(response)
+
+})
+
+app.get('/poolheat/setpoint/:poolsetpoint', function (req, res) {
+    var updateHeatMode = (currentHeat.spaHeatMode << 2) | currentHeat.poolHeatMode;
+    var updateHeat = [165, 10, 16, 34, 136, 4, parseInt(req.params.poolsetpoint), currentHeat.spaSetPoint, updateHeatMode, 0]
+    queuePacket(updateHeat);
+    logger.info('User request to update pool set point to %s', req.params.poolsetpoint, updateHeat)
+    var response = 'Request to set pool heat setpoint to ' + req.params.poolsetpoint + ' sent to controller'
+    res.send(response)
+})
+
+app.get('/poolheat/mode/:poolheatmode', function (req, res) {
+    var updateHeatMode = (currentHeat.spaHeatMode << 2) | req.params.poolheatmode;
+    var updateHeat = [165, 10, 16, 34, 136, 4, currentHeat.poolSetPoint, currentHeat.spaSetPoint, updateHeatMode, 0]
+    queuePacket(updateHeat);
+    logger.info('User request to update pool set point to %s', req.params.poolheatmode, updateHeat)
+    var response = 'Request to set pool heat mode to ' + heatModeStr[req.params.poolheatmode] + ' sent to controller'
+    res.send(response)
+})
 
 
 
-io.on('connection', function (socket) {
+io.on('connection', function (socket, error) {
+
+    socket.on('error', function () {
+        logger.error('Error with socket: ', error)
+    })
+
 
     // when the client emits 'toggleEquipment', this listens and executes
     socket.on('toggleCircuit', function (equipment) {
@@ -1871,17 +2019,7 @@ io.on('connection', function (socket) {
         var toggleCircuitPacket = [165, 10, 16, 34, 134, 2, equipment, desiredStatus];
 
         queuePacket(toggleCircuitPacket);
-        /*sp.write(packet, function (err, bytesWritten) {
-            sp.drain(function () {
-                if (err) {
-                    console.log('Error (%s) writing packet: %s', err, packet)
-                } else
-                    console.log('Wrote ' + packet + ' and bytes ' + bytesWritten)
-            });
-
-        })*/
-
-        logger.info('Request to toggle %s to %s', currentCircuitArrObj[equipment], desiredStatus == 0 ? "off" : "on")
+        logger.info('Request to toggle %s to %s', currentCircuitArrObj[equipment].name, desiredStatus == 0 ? "off" : "on")
 
 
     });
@@ -1896,9 +2034,66 @@ io.on('connection', function (socket) {
         searchAction = action;
     })
 
-    //if client connects immediately, currentstatus will not be available and client may crash
-    //var tempStatus = '';
-    //if (!currentStatus) tempStatus = 
+    socket.on('spasetpoint', function (spasetpoint) {
+        var updateHeatMode = (currentHeat.spaHeatMode << 2) | currentHeat.poolHeatMode;
+        var updateHeat = [165, 10, 16, 34, 136, 4, currentHeat.poolSetPoint, parseInt(spasetpoint), updateHeatMode, 0]
+        logger.info('User request to update spa set point to %s', spasetpoint, updateHeat)
+        queuePacket(updateHeat);
+        //var response = 'Request to set spa heat setpoint to ' + req.params.temp + ' sent to controller'
+        //res.send(response)
+    })
+
+    socket.on('spaheatmode', function (spaheatmode) {
+        var updateHeatMode = (parseInt(spaheatmode) << 2) | currentHeat.poolHeatMode;
+        var updateHeat = [165, 10, 16, 34, 136, 4, currentHeat.poolSetPoint, currentHeat.spaSetPoint, updateHeatMode, 0]
+        queuePacket(updateHeat);
+        logger.info('User request to update spa heat mode to %s', spaheatmode)
+        
+    })
+
+    socket.on('poolsetpoint', function (poolsetpoint) {
+        var updateHeatMode = (currentHeat.spaHeatMode << 2) | currentHeat.poolHeatMode;
+        var updateHeat = [165, 10, 16, 34, 136, 4, parseInt(poolsetpoint), currentHeat.spaSetPoint, updateHeatMode, 0]
+        queuePacket(updateHeat);
+        logger.info('User request to update pool set point to %s', poolsetpoint)
+            //var response = 'Request to set pool heat setpoint to ' + req.params.temp + ' sent to controller'
+
+    })
+
+    socket.on('poolheatmode', function (poolheatmode) {
+        var updateHeatMode = (currentHeat.spaHeatMode << 2) | poolheatmode;
+        var updateHeat = [165, 10, 16, 34, 136, 4, currentHeat.poolSetPoint, currentHeat.spaSetPoint, updateHeatMode, 0]
+        queuePacket(updateHeat);
+        logger.info('User request to update pool heat mode to %s', poolheatmode)
+    })
+
+    socket.on('setHeatSetPoint', function (equip, change) {
+
+        var updateHeatMode = (currentHeat.spaHeatMode << 2) | currentHeat.poolHeatMode;
+        if (equip == "pool") {
+            var updateHeat = [165, 10, 16, 34, 136, 4, currentHeat.poolSetPoint + change, currentHeat.spaSetPoint, updateHeatMode, 0]
+            logger.info('User request to update %s set point to %s', equip, currentHeat.poolSetPoint + change)
+        } else {
+            var updateHeat = [165, 10, 16, 34, 136, 4, currentHeat.poolSetPoint, currentHeat.spaSetPoint + parseInt(change), updateHeatMode, 0]
+            logger.info('User request to update %s set point to %s', equip, currentHeat.spaSetPoint + change)
+        }
+        queuePacket(updateHeat);
+
+    })
+
+    socket.on('setHeatMode', function (equip, change) {
+        if (equip == "pool") {
+            var updateHeatMode = (currentHeat.spaHeatMode << 2) | change;
+            var updateHeat = [165, 10, 16, 34, 136, 4, currentHeat.poolSetPoint, currentHeat.spaSetPoint, updateHeatMode, 0]
+            
+        } else {
+            var updateHeatMode = (change << 2) | currentHeat.poolHeatMode;
+            var updateHeat = [165, 10, 16, 34, 136, 4, currentHeat.poolSetPoint, currentHeat.spaSetPoint, updateHeatMode, 0]
+        }
+            queuePacket(updateHeat);
+        logger.info('User request to update %s heat mode to %s', equip, heatModeStr[change])
+    })
+
     io.sockets.emit('circuit',
         currentCircuitArrObj
     );
@@ -1911,16 +2106,15 @@ io.on('connection', function (socket) {
     io.sockets.emit('pump',
         currentPumpStatus
     );
-    if (currentHeatSetPoint != null) {
+    if (currentHeat != null) {
         io.sockets.emit('heat',
-            currentHeatSetPoint
+            currentHeat
         );
     }
     if (currentSchedule.length > 3) {
         io.sockets.emit('schedule',
             currentSchedule)
     }
-
 
     io.sockets.emit('searchResults',
         'Input values and click start.  All values optional.  Please refer to https://github.com/tagyoureit/nodejs-Pentair/wiki/Broadcast for values.');
