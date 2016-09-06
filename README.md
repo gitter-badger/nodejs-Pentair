@@ -1,7 +1,9 @@
-# Latest version 0.0.8
+# Version 0.0.9
 tl;dr
 
  Important changes:
+ 
+ If you get a SerialPort error, I updated this module to 4.0.1.  Please 'npm uninstall serialport' and then 'npm install'.  
 
  Configuration is now read from your pool.  The app will send the commands to read the custom name strings, circuit names and schedules.  
  
@@ -15,11 +17,15 @@ tl;dr
 
  REST/API:  You can use Sockets.IO to subscribe to updates (see the "basic UI" example).  
  You can also call REST URI's like:
-    Get circuit status: http://yourmachine:3000/circuit/# to get the status of circuit '#'
-    Toggle circuit status: http://yourmachine:3000/circuit/#/toggle to get the toggle circuit '#'
-    Get system status: http://yourmachine:3000/status
-    Get schedules: http://yourmachine:3000/schedule
-    Get pump status: http://yourmachine:3000/pump
+    *Get circuit status: /circuit/# to get the status of circuit '#'
+    *Toggle circuit status: /circuit/#/toggle to get the toggle circuit '#'
+    *Get system status: /status
+    *Get schedules: /schedule
+    *Get pump status: /pump
+    *Set spa heat setpoint: /spaheat/setpoint/#
+    *Set spa heat mode: /spaheat/mode/#  (0=off, 1=heater, 2=solar pref, 3=solar only)
+    *Set pool heat setpoint: /poolheat/setpoint/#
+    *Set pool heat mode: /poolheat/mode/# (0=off, 1=heater, 2=solar pref, 3=solar only)
     
 
 
@@ -38,10 +44,11 @@ My goals of this project are:
 
 # Installation
 
-1. This code **REQUIRES** a RS485 serial module.  There are plenty of sites out there that describe the RS485 and differences from RS232 so I won't go into detail here.  I purchased [EZSync FTDI](http://www.amazon.com/EZSync-RS485-USB-RS485-WE-compatible-EZSync010/dp/B010KJSCR8?ie=UTF8&psc=1&redirect=true&ref_=oh_aui_detailpage_o01_s00) but I think others will do.
-UPDATE - I had trouble with the EZSync.  I purchase a very inexpensive [JBTek](https://www.amazon.com/gp/product/B00NKAJGZM/ref=oh_aui_search_detailpage?ie=UTF8&psc=1) adapter and had better luck with it.
+1. This code **REQUIRES** a RS485 serial module.  There are plenty of sites out there that describe the RS485 and differences from RS232 so I won't go into detail here.  ~~I purchased an [EZSync FTDI](http://www.amazon.com/EZSync-RS485-USB-RS485-WE-compatible-EZSync010/dp/B010KJSCR8?ie=UTF8&psc=1&redirect=true&ref_=oh_aui_detailpage_o01_s00).~~
+UPDATE - I had trouble with the EZSync in that it won't write back to the bus.  I purchased a very inexpensive [JBTek](https://www.amazon.com/gp/product/B00NKAJGZM/ref=oh_aui_search_detailpage?ie=UTF8&psc=1) adapter and had better luck with it.
 
-2.  I will add more later about the actual wiring of the adapter, but I used the Ground<--> Ground, and the DATA+ and DATA- (no power needed as your Pentair adapters already are powered and so is my RS-485 adapter.
+2.  Connect the DATA+ and DATA-.
+
 3.  To see if you are getting the proper communications from the bus, before you even try to run this program, run from your *nix command line ```od -x < /dev/ttyUSB0```.  Of course, you'll need to change the address of your RS-485 adapter if it isn't the same as mine (here and in the code).
 
 * 3a   You'll know you have the wires write when the output of this command looks like (you should see multiple repititions of ffa5ff): 
@@ -91,10 +98,16 @@ Initial - This version was the first cut at the code
 
 
 0.0.8 -
-*Significantly revised the logging.  It now comes with more options, and by default, is much quieter.
-*Got rid of the logging to the files.  It wasn't useful.  Winston can easily be modified to write back to the log files if your situation dictates this.
-*Sockets.io compatability
-*REST API
+* Significantly revised the logging.  It now comes with more options, and by default, is much quieter.
+* Got rid of the logging to the files.  It wasn't useful.  Winston can easily be modified to write back to the log files if your situation dictates this.
+* Sockets.io compatability
+* REST API
+
+0.0.9 -
+* Added REST API and Sockets.io call to change heat set point and change heat mode
+* Updated UI to reflect new Socket calls (you can now change the heat mode and pool temp).  
+* Updated SerialPort to 4.0.1.
+
 
 # Methodology
 
