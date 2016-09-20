@@ -26,7 +26,10 @@ tl;dr
  * Set spa heat mode: /spaheat/mode/#  (0=off, 1=heater, 2=solar pref, 3=solar only)
  * Set pool heat setpoint: /poolheat/setpoint/#
  * Set pool heat mode: /poolheat/mode/# (0=off, 1=heater, 2=solar pref, 3=solar only)
+
     
+=======
+
     
 
 
