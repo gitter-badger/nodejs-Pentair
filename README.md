@@ -1,11 +1,11 @@
-# Version 0.0.9
+# Version 0.1.0
 tl;dr
 
  Important changes:
  
  If you get a SerialPort error, I updated this module to 4.0.1.  Please 'npm uninstall serialport' and then 'npm install'.  
 
- Configuration is now read from your pool.  The app will send the commands to read the custom name strings, circuit names and schedules.  
+ Configuration is now read from your pool.  The app will send the commands to read the custom name strings, circuit names and schedules.  If any commands are written to the bus 10 times, but we do not get a reply, an error will be thrown and the logging level will be changed. 
  
  The web UI will dynamically load as the information is received.
  
@@ -16,16 +16,17 @@ tl;dr
  Logging has been significantly revised.  See the log variables in index.js to adjust.
 
  REST/API:  You can use Sockets.IO to subscribe to updates (see the "basic UI" example).  
- You can also call REST URI's like:
-    *Get circuit status: /circuit/# to get the status of circuit '#'
-    *Toggle circuit status: /circuit/#/toggle to get the toggle circuit '#'
-    *Get system status: /status
-    *Get schedules: /schedule
-    *Get pump status: /pump
-    *Set spa heat setpoint: /spaheat/setpoint/#
-    *Set spa heat mode: /spaheat/mode/#  (0=off, 1=heater, 2=solar pref, 3=solar only)
-    *Set pool heat setpoint: /poolheat/setpoint/#
-    *Set pool heat mode: /poolheat/mode/# (0=off, 1=heater, 2=solar pref, 3=solar only)
+ You can also call REST URI's like:  
+ * Get circuit status: /circuit/# to get the status of circuit '#'
+ * Toggle circuit status: /circuit/#/toggle to get the toggle circuit '#'
+ * Get system status: /status
+ * Get schedules: /schedule
+ * Get pump status: /pump
+ * Set spa heat setpoint: /spaheat/setpoint/#
+ * Set spa heat mode: /spaheat/mode/#  (0=off, 1=heater, 2=solar pref, 3=solar only)
+ * Set pool heat setpoint: /poolheat/setpoint/#
+ * Set pool heat mode: /poolheat/mode/# (0=off, 1=heater, 2=solar pref, 3=solar only)
+    
     
 
 
@@ -107,6 +108,11 @@ Initial - This version was the first cut at the code
 * Added REST API and Sockets.io call to change heat set point and change heat mode
 * Updated UI to reflect new Socket calls (you can now change the heat mode and pool temp).  
 * Updated SerialPort to 4.0.1.
+
+0.1.0 - 
+* Something weird happened and my Intellitouch stopped responding to packets starting with 255,0,255,165,10,DEST,SRC...  The 10 changed to a 16.  I don't know why, but it drove me crazy for 5 days.  Now the app dynamically reads this packet.
+* Much more information debugged for my friends over at CocoonTech.  
+* Bug fixes galore.  More clear logging messages.  
 
 
 # Methodology
